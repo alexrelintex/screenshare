@@ -1,0 +1,7 @@
+# Read automatically by `act` from the repo root — commit it.
+#
+# GitHub-hosted runners are amd64. On Apple Silicon act defaults to arm64, and
+# many actions ship amd64-only binaries, so pin the platform to match real CI.
+# Cost: the runner executes under emulation and is noticeably slower. Delete
+# this line if you only care about speed and your actions are arch-agnostic.
+--container-architecture=linux/amd64

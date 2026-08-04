@@ -1,0 +1,21 @@
+services:
+  api:
+    # Host port is overridable; the CONTAINER port never changes, so nothing
+    # inside the compose network has to care. Set API_PORT in .env to dodge a
+    # collision with whatever else is already listening on your machine.
+    build: ./services/api
+    ports: ["${API_PORT:-8000}:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: ./services/web
+    environment:
+      API_URL: http://api:8000
+    ports: ["${WEB_PORT:-3000}:3000"]
+    depends_on:
+      api:
+        condition: service_healthy

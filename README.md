@@ -67,20 +67,39 @@ This is a *pointer*, not remote control. Nothing is injected into the host's inp
 
 ## Run it locally
 
+One command. No Docker, no ports to pick, no directory to be in — the script finds the repo
+root itself, installs anything missing on first run, chooses free ports, and opens both tabs.
+
 ```bash
-make setup        # uv venv + npm install
-make ci           # lint + unit tests + bundle (identical to CI)
-make up-native    # signaling :8000, demo :5173 — no Docker needed
-make smoke
+./run-local.sh          # start
+./run-local.sh status   # the two URLs
+./run-local.sh stop     # stop
 ```
 
-Then open two tabs:
+Then: click **Share screen** in the host tab, pick a window, and move your mouse over the video
+in the viewer tab — a blue dot tracks it on the host.
 
-- host: <http://127.0.0.1:5173/demo/index.html?room=demo&mode=host>
-- viewer: <http://127.0.0.1:5173/demo/index.html?room=demo&mode=viewer>
+**macOS:** the first share prompts for Screen Recording permission. If the picker appears but
+the video stays black, grant it under **System Settings → Privacy & Security → Screen & System
+Audio Recording**, then fully quit and reopen the browser — the permission is only picked up on
+restart.
 
-Click **Share screen** in the host tab, pick a window, then move your mouse over the video in the
-viewer tab and watch the dot track it on the host.
+If 8000 or 5173 are busy the script shifts up (8001, 5174, …) and prints what it used, so a
+collision is a warning rather than a failure.
+
+<details>
+<summary>Manual equivalent, if you prefer make targets</summary>
+
+```bash
+make setup        # uv venv + npm install
+make ports        # what is holding 8000 / 5173
+make up-native    # start both as host processes
+make smoke
+make down-native
+```
+
+Host ports come from `.env` (`SIGNALING_PORT`, `STATIC_PORT`) — read by both make and compose.
+</details>
 
 ### Docker
 

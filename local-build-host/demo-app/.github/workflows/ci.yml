@@ -1,0 +1,15 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: make setup
+      - run: make lint
+      - run: make test
+      - run: make build
