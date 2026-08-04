@@ -40,7 +40,9 @@
   const qs = new URLSearchParams(location.search);
   const room = qs.get("room") || "demo";
   const mode = qs.get("mode") === "viewer" ? "viewer" : "host";
-  const signaling = qs.get("signaling") || "http://127.0.0.1:8000";
+  // Use query param if provided, otherwise use current origin's hostname with port 8000
+  const signalingHost = qs.get("signaling") || `http://${window.location.hostname}:8000`;
+  const signaling = signalingHost.includes("://") ? signalingHost : `http://${signalingHost}:8000`;
 
   document.getElementById("role").textContent = mode;
   document.getElementById("roomLabel").textContent = room;
