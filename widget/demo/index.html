@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>screen-share demo</title>
+<style>
+  /* Deliberately hostile host-page CSS. If the widget's shadow DOM works,
+     none of this reaches inside it. */
+  * { box-sizing: content-box; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 32px;
+         background: #f4f4f6; color: #222; }
+  video { width: 40px !important; border: 6px dashed red; }
+  button { background: hotpink !important; font-size: 28px !important; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 20px; color: #666; font-size: 14px; }
+  .links a { margin-right: 14px; font-size: 14px; }
+  code { background: #e6e6ea; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>screen-share &mdash; <span id="role"></span></h1>
+  <p class="sub">
+    Room <code id="roomLabel"></code>. This page applies deliberately hostile CSS
+    (<code>video { width: 40px }</code>, pink 28px buttons) to prove the widget's
+    shadow DOM isolates it.
+  </p>
+  <div class="links">
+    <a id="hostLink" href="#">open host</a>
+    <a id="viewerLink" href="#">open viewer</a>
+  </div>
+  <p></p>
+  <div id="mount"></div>
+</main>
+
+<script src="../dist/screenshare.js"></script>
+<script>
+  const qs = new URLSearchParams(location.search);
+  const room = qs.get("room") || "demo";
+  const mode = qs.get("mode") === "viewer" ? "viewer" : "host";
+  const signaling = qs.get("signaling") || "http://127.0.0.1:8000";
+
+  document.getElementById("role").textContent = mode;
+  document.getElementById("roomLabel").textContent = room;
+  document.getElementById("hostLink").href = `?room=${room}&mode=host`;
+  document.getElementById("viewerLink").href = `?room=${room}&mode=viewer`;
+
+  // Create AFTER wiring listeners: a real host page may configure the element
+  // before or after insertion, and both must work (see attributeChangedCallback).
+  const el = document.createElement("screen-share");
+
+  // Test hook: automated runs replace desktop capture with a synthetic stream,
+  // because a headless browser has no desktop to capture. Real users never
+  // hit this path — captureSource stays undefined and getDisplayMedia is used.
+  if (qs.get("fakeCapture") === "1") {
+    el.captureSource = async () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 360;
+      const ctx = canvas.getContext("2d");
+      let f = 0;
+      const draw = () => {
+        f++;
+        ctx.fillStyle = `hsl(${f % 360} 70% 45%)`;
+        ctx.fillRect(0, 0, 640, 360);
+        ctx.fillStyle = "#fff";
+        ctx.font = "32px monospace";
+        ctx.fillText(`frame ${f}`, 24, 60);
+      };
+      // setInterval, not requestAnimationFrame: rAF is suspended entirely in a
+      // backgrounded tab, and in a two-page test one page is always background.
+      draw();
+      setInterval(draw, 1000 / 15);
+      return canvas.captureStream(15);
+    };
+  }
+
+  el.setAttribute("room", room);
+  el.setAttribute("signaling", signaling);
+  el.setAttribute("mode", mode);
+
+  // Event log the E2E test asserts against.
+  window.__ss = { events: [], cursors: [] };
+  for (const name of ["ss-state", "ss-stream", "ss-sharing", "ss-stopped", "ss-error"]) {
+    el.addEventListener(name, (e) => window.__ss.events.push({ name, detail: e.detail }));
+  }
+  el.addEventListener("ss-cursor", (e) => window.__ss.cursors.push(e.detail));
+
+  document.getElementById("mount").appendChild(el);
+</script>
+</body>
+</html>
