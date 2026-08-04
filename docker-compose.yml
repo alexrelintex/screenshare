@@ -1,7 +1,7 @@
 services:
   signaling:
     build: ./server
-    ports: ["8000:8000"]
+    ports: ["${SIGNALING_PORT:-8000}:8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 5s
@@ -10,7 +10,7 @@ services:
 
   static:
     build: ./widget
-    ports: ["5173:5173"]
+    ports: ["${STATIC_PORT:-5173}:5173"]
     depends_on:
       signaling:
         condition: service_healthy

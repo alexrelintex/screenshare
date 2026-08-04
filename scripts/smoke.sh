@@ -2,8 +2,8 @@
 # Black-box checks against a running stack (Docker or native — same checks).
 set -euo pipefail
 
-SIGNALING=${SIGNALING:-http://127.0.0.1:8000}
-STATIC=${STATIC:-http://127.0.0.1:5173}
+SIGNALING=${SIGNALING:-http://127.0.0.1:${SIGNALING_PORT:-8000}}
+STATIC=${STATIC:-http://127.0.0.1:${STATIC_PORT:-5173}}
 
 check() { printf '  %-52s' "$1"; }
 pass()  { printf '\033[32mPASS\033[0m\n'; }

@@ -1,11 +1,19 @@
 # One entrypoint. CI calls these same targets, so local == CI.
 SHELL := /bin/bash
+
+-include .env
+# Defaults MUST precede the export: `export FOO` marks FOO defined-but-empty,
+# after which `FOO ?= 8000` no longer fires and you get an empty port.
+SIGNALING_PORT ?= 8000
+STATIC_PORT ?= 5173
+export SIGNALING_PORT STATIC_PORT
+
 SRV := server
 WEB := widget
 VENV := $(SRV)/.venv
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint test e2e build up down smoke ci clean up-native down-native act
+.PHONY: help setup lint test e2e build up down smoke ci clean up-native down-native act ports
 
 # awk, not `sed 's/.../\t/'` — BSD sed (macOS) emits a literal 't' for \t.
 help: ## show targets
@@ -42,13 +50,13 @@ down: ## stop the stack
 
 up-native: bundle ## run signaling + static host as processes (no Docker)
 	@mkdir -p .run
-	@$(VENV)/bin/uvicorn signaling.main:app --host 127.0.0.1 --port 8000 \
+	@$(VENV)/bin/uvicorn signaling.main:app --host 127.0.0.1 --port $(SIGNALING_PORT) \
 	    --app-dir $(SRV)/src --log-level warning > .run/signaling.log 2>&1 & echo $$! > .run/signaling.pid
-	@cd $(WEB) && node serve.mjs > ../.run/static.log 2>&1 & echo $$! > .run/static.pid
+	@cd $(WEB) && PORT=$(STATIC_PORT) node serve.mjs > ../.run/static.log 2>&1 & echo $$! > .run/static.pid
 	@for i in $$(seq 1 60); do \
-	   curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1 && \
-	   curl -fsS http://127.0.0.1:5173/demo/index.html >/dev/null 2>&1 && \
-	   { echo "up — host http://127.0.0.1:5173/demo/index.html?room=demo&mode=host"; exit 0; }; \
+	   curl -fsS http://127.0.0.1:$(SIGNALING_PORT)/healthz >/dev/null 2>&1 && \
+	   curl -fsS http://127.0.0.1:$(STATIC_PORT)/demo/index.html >/dev/null 2>&1 && \
+	   { echo "up — host http://127.0.0.1:$(STATIC_PORT)/demo/index.html?room=demo&mode=host"; exit 0; }; \
 	   sleep 0.5; done; \
 	 echo "failed to start; see .run/*.log"; exit 1
 
@@ -56,6 +64,13 @@ down-native: ## stop host processes
 	@-[ -f .run/signaling.pid ] && kill $$(cat .run/signaling.pid) 2>/dev/null || true
 	@-[ -f .run/static.pid ] && kill $$(cat .run/static.pid) 2>/dev/null || true
 	@rm -rf .run; echo "down"
+
+ports: ## show what is holding the ports this project wants
+	@for p in $(SIGNALING_PORT) $(STATIC_PORT); do \
+	   printf "port %-6s " "$$p"; \
+	   holder=$$(lsof -nP -iTCP:$$p -sTCP:LISTEN 2>/dev/null | tail -n +2 | head -1); \
+	   if [ -n "$$holder" ]; then echo "$$holder"; else echo "free"; fi; \
+	 done
 
 smoke: ## black-box checks against whatever is running
 	./scripts/smoke.sh
