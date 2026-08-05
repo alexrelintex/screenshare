@@ -64,7 +64,9 @@ const STYLES = `
        1400px desktop — the viewport tells us nothing about the space we have. */
     container-type: inline-size;
   }
-  .stage { position: relative; aspect-ratio: 16 / 9; background: #0d0d10; }
+  /* Ratio arrives as a custom property, not an inline style, so the fullscreen
+     rule below can override it without resorting to !important. */
+  .stage { position: relative; aspect-ratio: var(--ss-aspect, 16 / 9); background: #0d0d10; }
   video { width: 100%; height: 100%; object-fit: contain; display: block; background: #0d0d10; }
   /* Viewer only: a drag across the video is a pointing gesture, not a scroll.
      Without this the browser claims the gesture, fires pointercancel, and the
@@ -142,6 +144,19 @@ const STYLES = `
     }
   }
 
+  /* One attribute covers both routes into fullscreen — the real Fullscreen API
+     and the CSS fallback for browsers without it (iPhone) — so the layout is
+     described once. Under the real API the browser has already sized the
+     element and these rules are simply harmless. */
+  :host([data-ss-fullscreen]) {
+    position: fixed; inset: 0; z-index: 2147483647; background: #000;
+  }
+  :host([data-ss-fullscreen]) .wrap {
+    height: 100%; border-radius: 0; border: 0;
+    display: flex; flex-direction: column;
+  }
+  :host([data-ss-fullscreen]) .stage { flex: 1; aspect-ratio: auto; min-height: 0; }
+
   /* Touch input, whatever the screen size: ~31px of button is well under the
      ~44px a finger needs to hit reliably. Keyed on the input device, not the
      width, because a large tablet has the same problem. */
@@ -159,7 +174,7 @@ const STYLES = `
 `;
 
 export class ScreenShareElement extends HTMLElement {
-  static observedAttributes = ["room", "signaling", "mode", "max-bitrate"];
+  static observedAttributes = ["room", "signaling", "mode", "max-bitrate", "fullscreen"];
 
   /**
    * Test / integration seam. Defaults to getDisplayMedia. Overriding it lets
@@ -180,6 +195,12 @@ export class ScreenShareElement extends HTMLElement {
   private sendCursor = throttle((_p: NormalizedPoint) => {}, 1000 / CURSOR_HZ);
   private stage!: HTMLDivElement;
   private pointerIdle: ReturnType<typeof setTimeout> | null = null;
+  private fullBtn: HTMLButtonElement | null = null;
+  private disarmFullscreen: (() => void) | null = null;
+  private onKeydown: ((ev: KeyboardEvent) => void) | null = null;
+  private onFullscreenChange: (() => void) | null = null;
+  /** Safari's prefixed spelling, absent from the DOM typings. */
+  private declare webkitRequestFullscreen?: () => Promise<void>;
 
   get room(): string {
     return this.getAttribute("room") ?? "";
@@ -233,9 +254,28 @@ export class ScreenShareElement extends HTMLElement {
     });
   }
 
+  /**
+   * Drop the listeners that live on `document` rather than in the shadow root.
+   *
+   * These outlive a rebuild, so without this an element whose attributes change
+   * a few times accumulates duplicate handlers and keeps a detached element
+   * alive through them.
+   */
+  private detachGlobals(): void {
+    if (this.onKeydown) document.removeEventListener("keydown", this.onKeydown);
+    if (this.onFullscreenChange) {
+      document.removeEventListener("fullscreenchange", this.onFullscreenChange);
+    }
+    this.disarmFullscreen?.();
+    this.onKeydown = null;
+    this.onFullscreenChange = null;
+    this.disarmFullscreen = null;
+  }
+
   private teardown(): void {
     this.sendCursor.cancel();
     this.clearPointerIdle();
+    this.detachGlobals();
     this.session?.close();
     this.session = null;
   }
@@ -257,6 +297,10 @@ export class ScreenShareElement extends HTMLElement {
 
   /** (Re)populate the shadow root. Safe to call repeatedly. */
   private build(): void {
+    // Rebuilds replace the shadow root wholesale, so anything registered
+    // outside it has to be released first.
+    this.detachGlobals();
+    this.fullBtn = null;
     this.root.replaceChildren();
     const style = document.createElement("style");
     style.textContent = STYLES;
@@ -272,6 +316,7 @@ export class ScreenShareElement extends HTMLElement {
       <div class="bar">
         <button class="share"></button>
         <button class="stop" disabled>Stop</button>
+        <button class="full" hidden>Full screen</button>
         <span class="state"><span class="dot"></span><span class="label">idle</span></span>
       </div>`;
 
@@ -315,6 +360,34 @@ export class ScreenShareElement extends HTMLElement {
 
     this.shareBtn.addEventListener("click", () => void this.startShare());
     this.stopBtn.addEventListener("click", () => this.stopShare());
+
+    // Viewer only: the host already sees their own screen at full size, so a
+    // fullscreen control there would be a button that changes nothing useful.
+    if (this.mode === "viewer") {
+      this.fullBtn = wrap.querySelector("button.full")!;
+      this.fullBtn.hidden = false;
+      this.fullBtn.addEventListener("click", () => void this.toggleFullscreen());
+      this.syncFullscreenButton();
+
+      // Escape leaves the CSS fallback, matching what the real API does for
+      // free. Harmless under the real API, which has already exited by then.
+      this.onKeydown = (ev: KeyboardEvent): void => {
+        if (ev.key === "Escape" && this.isFullscreen) void this.exitFullscreen();
+      };
+      document.addEventListener("keydown", this.onKeydown);
+
+      // The browser can leave fullscreen without us — Escape, the system UI, a
+      // gesture — and the attribute has to follow or the layout stays stuck.
+      this.onFullscreenChange = (): void => {
+        if (document.fullscreenElement !== this && this.hasAttribute("data-ss-fullscreen")) {
+          this.removeAttribute("data-ss-fullscreen");
+          this.syncFullscreenButton();
+        }
+      };
+      document.addEventListener("fullscreenchange", this.onFullscreenChange);
+
+      if (this.hasAttribute("fullscreen")) this.armFullscreen();
+    }
 
     // The stream dictates the stage's shape, so react whenever its dimensions
     // land or change (a host switching monitors mid-session fires `resize`).
@@ -392,7 +465,7 @@ export class ScreenShareElement extends HTMLElement {
    */
   private syncAspect(): void {
     const { videoWidth: w, videoHeight: h } = this.video;
-    if (w > 0 && h > 0) this.stage.style.aspectRatio = `${w} / ${h}`;
+    if (w > 0 && h > 0) this.stage.style.setProperty("--ss-aspect", `${w} / ${h}`);
   }
 
   private setState(state: ConnState, detail?: string): void {
@@ -494,6 +567,82 @@ export class ScreenShareElement extends HTMLElement {
     );
   }
 
+  /** True while the widget occupies the screen by either route. */
+  get isFullscreen(): boolean {
+    return this.hasAttribute("data-ss-fullscreen");
+  }
+
+  /**
+   * Fill the screen.
+   *
+   * Must be called from a user gesture — every browser rejects an unprompted
+   * requestFullscreen, which is why the `fullscreen` attribute arms this rather
+   * than calling it on load.
+   *
+   * Two routes, because iPhone Safari implements neither `requestFullscreen`
+   * nor `webkitRequestFullscreen` on ordinary elements. Its one fullscreen
+   * affordance is the native video player, which paints over the shadow root
+   * and would take the remote cursor and tap ripple with it — the whole point
+   * of the viewer. So the fallback is a fixed-position overlay instead: no
+   * browser chrome hidden, but the widget owns the viewport and the overlay
+   * still works.
+   */
+  async enterFullscreen(): Promise<void> {
+    if (this.isFullscreen) return;
+    this.setAttribute("data-ss-fullscreen", "");
+    const request = this.requestFullscreen ?? this.webkitRequestFullscreen;
+    if (typeof request === "function") {
+      try {
+        await request.call(this);
+      } catch {
+        // Rejected (no gesture, or policy) — the overlay is already applied and
+        // stands on its own, so there is nothing to undo.
+      }
+    }
+    this.syncFullscreenButton();
+  }
+
+  async exitFullscreen(): Promise<void> {
+    this.removeAttribute("data-ss-fullscreen");
+    if (document.fullscreenElement === this) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Already gone.
+      }
+    }
+    this.syncFullscreenButton();
+  }
+
+  async toggleFullscreen(): Promise<void> {
+    await (this.isFullscreen ? this.exitFullscreen() : this.enterFullscreen());
+  }
+
+  private syncFullscreenButton(): void {
+    if (!this.fullBtn) return;
+    const on = this.isFullscreen;
+    this.fullBtn.textContent = on ? "Exit full screen" : "Full screen";
+    this.fullBtn.setAttribute("aria-pressed", String(on));
+  }
+
+  /**
+   * Enter on the first user gesture after load.
+   *
+   * `once` on each listener, and all of them removed as soon as one fires, so a
+   * viewer who exits fullscreen is not dragged back into it by their next tap.
+   */
+  private armFullscreen(): void {
+    const events = ["pointerdown", "keydown"] as const;
+    const go = (): void => {
+      for (const name of events) document.removeEventListener(name, go);
+      void this.enterFullscreen();
+    };
+    for (const name of events) document.addEventListener(name, go, { once: true });
+    this.disarmFullscreen = () => {
+      for (const name of events) document.removeEventListener(name, go);
+    };
+  }
+
   /** Hide the remote pointer if no further cursor message arrives. */
   private armPointerIdle(): void {
     if (this.pointerIdle !== null) clearTimeout(this.pointerIdle);
@@ -548,7 +697,7 @@ export class ScreenShareElement extends HTMLElement {
     this.clearPointerIdle();
     this.pointer.classList.remove("on");
     // Back to the placeholder shape; the next stream sets its own.
-    this.stage.style.removeProperty("aspect-ratio");
+    this.stage.style.removeProperty("--ss-aspect");
     this.shareBtn.disabled = this.mode !== "host";
     this.stopBtn.disabled = true;
     this.dispatchEvent(new CustomEvent("ss-stopped", { bubbles: true, composed: true }));

@@ -1,7 +1,7 @@
 # screen-share
 
 An embeddable, dependency-free custom element for **1:1 WebRTC screen sharing with a remote
-cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **17.5 KB minified.**
+cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **20.4 KB minified.**
 
 Media is peer-to-peer — the server relays signaling only and never sees a video frame.
 
@@ -34,6 +34,7 @@ buttons) and an automated test asserts none of it penetrates.
 | `room` | yes | any string | Peers sharing a room id connect. Percent-encoded before use. |
 | `signaling` | yes | URL | `http(s)://` is upgraded to `ws(s)://` automatically. |
 | `mode` | no | `host` \| `viewer` | Defaults to `host`. |
+| `fullscreen` | no | present / absent | Viewer only. **Arms** fullscreen — the widget enters on the first tap or keypress, because no browser permits it without a user gesture. A `Full screen` button is always present in viewer mode regardless. |
 | `max-bitrate` | no | bits per second | Outbound encoder ceiling. Defaults to `1500000` (~11 MB/min) with a 15 fps cap, tuned for legible text on a metered link. Raise it on a LAN. Invalid or `0` falls back to the default. |
 
 Attributes may be set before *or after* insertion — the element reconnects when they change,

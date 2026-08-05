@@ -578,6 +578,83 @@ test("a tap draws a ripple on the host where the viewer pointed; a drag does not
   await ctx.close();
 });
 
+test("?fullscreen=1 waits for a gesture, then fills the screen", async ({ browser }) => {
+  const ctx = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  // Stand in for iPhone Safari, which implements neither spelling on ordinary
+  // elements. This is the fallback path, and the only one a headless browser
+  // exercises reliably — real fullscreen is at the mercy of the window manager.
+  await page.addInitScript(() => {
+    // @ts-expect-error deleting a DOM method to simulate the platform
+    delete Element.prototype.requestFullscreen;
+    // @ts-expect-error prefixed spelling is not in the typings
+    delete Element.prototype.webkitRequestFullscreen;
+  });
+  await page.goto(`/demo/index.html?room=${room()}&mode=viewer&fullscreen=1`);
+  await waitForWidget(page);
+
+  expect(await page.locator("screen-share").getAttribute("fullscreen")).not.toBeNull();
+
+  // Nothing may happen before a gesture — a page that could do this unprompted
+  // would be a page that could trap you.
+  expect(
+    await page.locator("screen-share").getAttribute("data-ss-fullscreen"),
+    "fullscreen must not engage before a user gesture",
+  ).toBeNull();
+
+  await page.touchscreen.tap(195, 700);
+  await expect
+    .poll(() => page.locator("screen-share").getAttribute("data-ss-fullscreen"), {
+      timeout: 5_000,
+      message: "the first tap did not enter fullscreen",
+    })
+    .not.toBeNull();
+
+  // The fallback has to actually cover the viewport to be worth anything.
+  const covers = await page.evaluate(() => {
+    const r = document.querySelector("screen-share")!.getBoundingClientRect();
+    return r.width >= window.innerWidth - 1 && r.height >= window.innerHeight - 1;
+  });
+  expect(covers, "the fullscreen fallback should cover the viewport").toBe(true);
+
+  // Escape leaves, and leaving must not re-arm on the next tap.
+  await page.keyboard.press("Escape");
+  await expect
+    .poll(() => page.locator("screen-share").getAttribute("data-ss-fullscreen"), { timeout: 5_000 })
+    .toBeNull();
+  await page.touchscreen.tap(195, 400);
+  await page.waitForTimeout(400);
+  expect(
+    await page.locator("screen-share").getAttribute("data-ss-fullscreen"),
+    "exiting fullscreen must not be undone by the next tap",
+  ).toBeNull();
+
+  // The button is the way back in, and says which way it goes.
+  const label = await page.evaluate(
+    () =>
+      document.querySelector("screen-share")!.shadowRoot!.querySelector("button.full")!.textContent,
+  );
+  expect(label).toBe("Full screen");
+
+  await ctx.close();
+});
+
+test("a host viewer gets no fullscreen button", async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(url(room(), "host"));
+  await waitForWidget(page);
+  // The host already sees their own screen; the control would do nothing useful.
+  const hidden = await page.evaluate(
+    () =>
+      document
+        .querySelector("screen-share")!
+        .shadowRoot!.querySelector<HTMLButtonElement>("button.full")!.hidden,
+  );
+  expect(hidden).toBe(true);
+  await ctx.close();
+});
+
 test("third peer is rejected with room-full", async ({ browser }) => {
   const r = room();
   const ctx = await browser.newContext();

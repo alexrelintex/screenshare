@@ -142,6 +142,10 @@
   el.setAttribute("signaling", signaling);
   el.setAttribute("mode", mode);
 
+  // ?fullscreen=1 arms it rather than doing it: no browser lets a page enter
+  // fullscreen without a user gesture, so the widget waits for the first tap.
+  if (qs.get("fullscreen") === "1") el.setAttribute("fullscreen", "");
+
   // Event log the E2E test asserts against.
   window.__ss = { events: [], cursors: [], taps: [] };
   el.addEventListener("ss-tap", (e) => window.__ss.taps.push(e.detail));
