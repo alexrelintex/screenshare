@@ -71,10 +71,16 @@ One command. No Docker, no ports to pick, no directory to be in — the script f
 root itself, installs anything missing on first run, chooses free ports, and opens both tabs.
 
 ```bash
-./run-local.sh          # start
-./run-local.sh status   # the two URLs
-./run-local.sh stop     # stop
+./run-local.sh                 # start — fresh room id each run
+./run-local.sh --room standup  # ...or a named room
+./run-local.sh status          # the two URLs
+./run-local.sh stop            # stop
 ```
+
+Each run generates a new room id. Rooms hold exactly two peers, so a fixed id
+would mean your second run collides with your first and the third tab is
+rejected with `room-full`. Opening the demo page with no `room` parameter also
+mints one and writes it into the address bar, so the URL is shareable as-is.
 
 Then: click **Share screen** in the host tab, pick a window, and move your mouse over the video
 in the viewer tab — a blue dot tracks it on the host.

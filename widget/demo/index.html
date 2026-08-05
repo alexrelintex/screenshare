@@ -30,6 +30,7 @@
   <div class="links">
     <a id="hostLink" href="#">open host</a>
     <a id="viewerLink" href="#">open viewer</a>
+    <button id="copyLink" type="button"></button>
   </div>
   <p></p>
   <div id="mount"></div>
@@ -38,16 +39,53 @@
 <script src="../dist/screenshare.js"></script>
 <script>
   const qs = new URLSearchParams(location.search);
-  const room = qs.get("room") || "demo";
+
+  // A fresh room when none was supplied. Rooms hold exactly two peers, so a
+  // fixed default means two independent visitors collide and the second pair
+  // gets `room-full`. Written back into the address bar so the URL you see is
+  // immediately shareable.
+  const randomRoom = () =>
+    "r-" + (crypto.randomUUID
+      ? crypto.randomUUID().replace(/-/g, "").slice(0, 10)
+      : Math.random().toString(36).slice(2, 12));
+
+  let room = qs.get("room");
+  if (!room) {
+    room = randomRoom();
+    qs.set("room", room);
+    history.replaceState(null, "", `${location.pathname}?${qs}`);
+  }
+
   const mode = qs.get("mode") === "viewer" ? "viewer" : "host";
-  // Use query param if provided, otherwise use current origin's hostname with port 8000
-  const signalingHost = qs.get("signaling") || `http://${window.location.hostname}:8000`;
-  const signaling = signalingHost.includes("://") ? signalingHost : `http://${signalingHost}:8000`;
+  const signaling = qs.get("signaling") || "http://127.0.0.1:8000";
+
+  // Carry every existing param across. Building these as `?room=..&mode=..`
+  // silently dropped `signaling`, so switching roles from the page lost a
+  // non-default signaling port and the widget failed to connect.
+  const linkFor = (m) => {
+    const p = new URLSearchParams(qs);
+    p.set("mode", m);
+    return `${location.pathname}?${p}`;
+  };
 
   document.getElementById("role").textContent = mode;
   document.getElementById("roomLabel").textContent = room;
-  document.getElementById("hostLink").href = `?room=${room}&mode=host`;
-  document.getElementById("viewerLink").href = `?room=${room}&mode=viewer`;
+  document.getElementById("hostLink").href = linkFor("host");
+  document.getElementById("viewerLink").href = linkFor("viewer");
+
+  const copyBtn = document.getElementById("copyLink");
+  copyBtn.addEventListener("click", async () => {
+    const url = new URL(linkFor(mode === "host" ? "viewer" : "host"), location.href).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      copyBtn.textContent = "copied";
+    } catch {
+      copyBtn.textContent = url; // clipboard blocked — show it to select manually
+    }
+    setTimeout(() => (copyBtn.textContent = LABEL), 2000);
+  });
+  const LABEL = mode === "host" ? "copy viewer link" : "copy host link";
+  copyBtn.textContent = LABEL;
 
   // Create AFTER wiring listeners: a real host page may configure the element
   // before or after insertion, and both must work (see attributeChangedCallback).

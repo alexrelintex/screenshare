@@ -2,9 +2,10 @@
 #
 # run-local.sh — start the screen-share demo on this machine. No Docker.
 #
-#   ./run-local.sh          start everything and print the two URLs
-#   ./run-local.sh stop     stop it
-#   ./run-local.sh status   what is running
+#   ./run-local.sh              start; prints two URLs sharing a fresh room id
+#   ./run-local.sh --room demo  start in a named room instead
+#   ./run-local.sh stop         stop it
+#   ./run-local.sh status       what is running
 #
 # Finds its own free ports, installs what is missing, and cd's to the right
 # place on its own. Safe to run repeatedly.
@@ -42,15 +43,37 @@ stop_all() {
   [ "$stopped" = 1 ] || ok "nothing was running"
 }
 
-case "${1:-start}" in
+# A fresh room per run. Rooms hold exactly two peers, so a fixed id means the
+# second run of the day collides with the first and the third tab is rejected.
+new_room() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    echo "r-$(uuidgen | tr '[:upper:]' '[:lower:]' | tr -d - | cut -c1-10)"
+  else
+    # bash 3.2 has $RANDOM; two draws give ~32 bits, plenty for a local demo.
+    echo "r-$(printf '%04x%04x' $RANDOM $RANDOM)"
+  fi
+}
+
+ACTION=start
+ROOM=${ROOM:-}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    start|stop|status) ACTION=$1 ;;
+    --room) shift; [ $# -gt 0 ] || die "--room needs a value"; ROOM=$1 ;;
+    --room=*) ROOM=${1#--room=} ;;
+    -h|--help) echo "usage: $0 [start|stop|status] [--room NAME]"; exit 0 ;;
+    *) die "unknown argument: $1 (try --help)" ;;
+  esac
+  shift
+done
+
+case "$ACTION" in
   stop)
     say "stopping"; stop_all; exit 0 ;;
   status)
     if [ -f "$RUN/urls" ]; then say "running"; cat "$RUN/urls"
     else say "not running"; fi
     exit 0 ;;
-  start) ;;
-  *) die "usage: $0 [start|stop|status]" ;;
 esac
 
 # ---------------------------------------------------------------- prerequisites
@@ -122,7 +145,9 @@ if ! curl -fsS "http://127.0.0.1:$STATIC_PORT/demo/index.html" >/dev/null 2>&1; 
   stop_all; exit 1
 fi
 
-BASE="http://127.0.0.1:$STATIC_PORT/demo/index.html?room=demo&signaling=http://127.0.0.1:$SIGNALING_PORT"
+[ -n "$ROOM" ] || ROOM=$(new_room)
+ok "room $ROOM"
+BASE="http://127.0.0.1:$STATIC_PORT/demo/index.html?room=$ROOM&signaling=http://127.0.0.1:$SIGNALING_PORT"
 HOST_URL="$BASE&mode=host"
 VIEW_URL="$BASE&mode=viewer"
 { echo "  host   $HOST_URL"; echo "  viewer $VIEW_URL"; } > "$RUN/urls"

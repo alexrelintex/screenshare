@@ -19,22 +19,14 @@ const TYPES = {
 createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   // normalize + prefix check: without this, /../../etc/passwd escapes ROOT.
-  let target = resolve(join(ROOT, normalize(decodeURIComponent(url.pathname))));
+  const target = resolve(join(ROOT, normalize(decodeURIComponent(url.pathname))));
   if (!target.startsWith(ROOT)) {
     res.writeHead(403).end("forbidden");
     return;
   }
-  if (!existsSync(target)) {
+  if (!existsSync(target) || statSync(target).isDirectory()) {
     res.writeHead(404).end("not found");
     return;
-  }
-  // Serve index.html for directory requests
-  if (statSync(target).isDirectory()) {
-    target = join(target, "index.html");
-    if (!existsSync(target)) {
-      res.writeHead(404).end("not found");
-      return;
-    }
   }
   res.writeHead(200, {
     "content-type": TYPES[extname(target)] ?? "application/octet-stream",
