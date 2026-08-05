@@ -1,7 +1,7 @@
 # screen-share
 
 An embeddable, dependency-free custom element for **1:1 WebRTC screen sharing with a remote
-cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **17.2 KB minified.**
+cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **17.5 KB minified.**
 
 Media is peer-to-peer — the server relays signaling only and never sees a video frame.
 

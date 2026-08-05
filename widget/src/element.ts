@@ -35,8 +35,14 @@ const POINTER_IDLE_MS = 2000;
 const TAP_SLOP_PX = 12;
 const TAP_MAX_MS = 700;
 
-/** Lifetime of the ripple the host draws at a tap. Matches the CSS animation. */
-const RIPPLE_MS = 620;
+/**
+ * Lifetime of the ripple the host draws at a tap.
+ *
+ * Long enough that a host looking at another part of their own screen still
+ * catches it. Interpolated into the stylesheet below rather than repeated
+ * there, so the cleanup timer and the animation cannot drift apart.
+ */
+const RIPPLE_MS = 1600;
 
 const STYLES = `
   :host {
@@ -116,18 +122,23 @@ const STYLES = `
     border-radius: 50%; pointer-events: none;
     border: 2px solid var(--ss-accent);
     background: rgba(79,140,255,.18);
-    animation: ss-ripple 620ms cubic-bezier(.22,.61,.36,1) forwards;
+    animation: ss-ripple ${RIPPLE_MS}ms cubic-bezier(.22,.61,.36,1) forwards;
   }
+  /* Expand fast, then hold and fade slowly. Stretching a plain expand-and-fade
+     over the same time just looks sluggish; the mark needs to arrive quickly
+     and then persist long enough to be found. */
   @keyframes ss-ripple {
-    from { transform: scale(.4); opacity: 1; }
-    to   { transform: scale(2.6); opacity: 0; }
+    0%   { transform: scale(.4);  opacity: 1; }
+    18%  { transform: scale(2.1); opacity: 1; }
+    60%  { transform: scale(2.2); opacity: .8; }
+    100% { transform: scale(2.5); opacity: 0; }
   }
   /* Still announce the location, just without the expansion. */
   @media (prefers-reduced-motion: reduce) {
-    .ripple { animation: ss-ripple-hold 620ms steps(1, end) forwards; }
+    .ripple { animation: ss-ripple-hold ${RIPPLE_MS}ms steps(1, end) forwards; }
     @keyframes ss-ripple-hold {
-      from { transform: scale(1.4); opacity: 1; }
-      to   { transform: scale(1.4); opacity: 0; }
+      from { transform: scale(1.6); opacity: 1; }
+      to   { transform: scale(1.6); opacity: 0; }
     }
   }
 
