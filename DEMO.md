@@ -10,26 +10,24 @@ Both services will start:
 - **Signaling Server** (Python/FastAPI): Port 8000
 - **Widget Server** (Node.js): Port 5173
 
-## Accessing the Demo from Inside Docker
-
-The demo is fully functional within the Docker network. To test it:
-
-```bash
-# Access demo page
-docker compose exec static node -e "fetch('http://localhost:5173/demo/?room=demo&mode=host').then(r => r.text()).then(console.log)"
-
-# Or use curl from within the network
-docker run --rm --network screenshare_default alpine/curl curl http://screenshare-static-1:5173/demo/?room=demo&mode=host
-```
-
 ## Demo URLs
 
-Once in a browser connected to the containers:
+Open these in your browser on the host machine — both ports are published, so
+no container-network gymnastics are needed:
 
-- **Host (sharing)**: `http://screenshare-static-1:5173/demo/?room=demo&mode=host`
-- **Viewer**: `http://screenshare-static-1:5173/demo/?room=demo&mode=viewer`
+- **Host (sharing)**: `http://127.0.0.1:5173/demo/index.html?room=demo&mode=host`
+- **Viewer**: `http://127.0.0.1:5173/demo/index.html?room=demo&mode=viewer`
 
-The `signaling` query parameter defaults to `http://{hostname}:8000` where hostname is the machine's address.
+Open the viewer in a second tab or another device on your network. The page
+mints a fresh room id when `room` is omitted, so two visitors do not collide.
+
+The `signaling` query parameter defaults to `http://127.0.0.1:8000`; pass it
+explicitly if you changed `SIGNALING_PORT`.
+
+> Earlier revisions told you to reach the demo from *inside* the Docker network.
+> That was a workaround for `serve.mjs` binding loopback inside the container,
+> which made the published port accept nothing. It binds `0.0.0.0` in the image
+> now (`HOST` env var, still loopback outside a container).
 
 ## Features Demonstrated
 

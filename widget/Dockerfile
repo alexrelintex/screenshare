@@ -16,6 +16,9 @@ COPY serve.mjs ./
 RUN useradd --system --uid 10002 app && chown -R app /app
 USER app
 
+# Bind all interfaces: a loopback bind inside the container makes the port
+# Docker publishes unreachable from the host.
+ENV HOST=0.0.0.0
 EXPOSE 5173
 HEALTHCHECK --interval=5s --timeout=3s --retries=12 \
   CMD node -e "fetch('http://localhost:5173/demo/index.html').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

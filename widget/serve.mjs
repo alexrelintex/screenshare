@@ -7,6 +7,11 @@ import { extname, join, normalize, resolve } from "node:path";
 
 const ROOT = resolve(".");
 const PORT = Number(process.env.PORT ?? 5173);
+// Loopback by default: this serves the repo directory with no auth, and on a
+// laptop that should not be reachable from the network. A container has to opt
+// in with HOST=0.0.0.0 — binding loopback inside a container means the port
+// Docker publishes accepts nothing, which looks like a hang from the host.
+const HOST = process.env.HOST ?? "127.0.0.1";
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -33,8 +38,10 @@ createServer((req, res) => {
     "cache-control": "no-store",
   });
   createReadStream(target).pipe(res);
-}).listen(PORT, "127.0.0.1", () => {
-  console.log(`serving ${ROOT} on http://127.0.0.1:${PORT}`);
-  console.log(`  host   http://127.0.0.1:${PORT}/demo/index.html?room=demo&mode=host`);
-  console.log(`  viewer http://127.0.0.1:${PORT}/demo/index.html?room=demo&mode=viewer`);
+}).listen(PORT, HOST, () => {
+  // A wildcard bind is not an address anyone can open; print something usable.
+  const shown = HOST === "0.0.0.0" || HOST === "::" ? "127.0.0.1" : HOST;
+  console.log(`serving ${ROOT} on http://${shown}:${PORT} (bound ${HOST})`);
+  console.log(`  host   http://${shown}:${PORT}/demo/index.html?room=demo&mode=host`);
+  console.log(`  viewer http://${shown}:${PORT}/demo/index.html?room=demo&mode=viewer`);
 });
