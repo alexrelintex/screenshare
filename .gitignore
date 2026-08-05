@@ -14,6 +14,3 @@ playwright-report/
 
 # Lockfiles are NOT ignored. package-lock.json / uv.lock pin exact transitive
 # versions and are what make a build reproducible. Commit them.
-
-.DS_Store
-
