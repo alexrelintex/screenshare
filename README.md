@@ -1,7 +1,7 @@
 # screen-share
 
 An embeddable, dependency-free custom element for **1:1 WebRTC screen sharing with a remote
-cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **11.5 KB minified.**
+cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **15.0 KB minified.**
 
 Media is peer-to-peer — the server relays signaling only and never sees a video frame.
 
@@ -49,7 +49,7 @@ All bubble and cross the shadow boundary (`composed: true`).
 | `ss-cursor` | `{ x, y }` | Remote pointer moved (0..1 normalised) |
 | `ss-sharing` | — | Local capture started |
 | `ss-stopped` | — | Sharing stopped |
-| `ss-error` | `{ error }` | Something failed |
+| `ss-error` | `{ error }` | Something failed. `"capture-unsupported"` on a device with no screen-capture API — phones and tablets — where host mode cannot work and the share button is disabled. |
 
 States: `idle` → `waiting-for-peer` → `negotiating` → `connected`, plus `disconnected`,
 `failed`, `closed`.

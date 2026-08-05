@@ -39,6 +39,10 @@ const STYLES = `
     border-radius: 10px;
     overflow: hidden;
     border: 1px solid #2a2a31;
+    /* A container query, not a media query. Media queries inside a shadow root
+       still measure the viewport, and this widget is routinely 320px wide on a
+       1400px desktop — the viewport tells us nothing about the space we have. */
+    container-type: inline-size;
   }
   .stage { position: relative; aspect-ratio: 16 / 9; background: #0d0d10; }
   video { width: 100%; height: 100%; object-fit: contain; display: block; background: #0d0d10; }
@@ -59,6 +63,10 @@ const STYLES = `
   .bar {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 12px; border-top: 1px solid #2a2a31;
+    /* .wrap clips overflow, so without wrapping the state label is cut off
+       rather than moved — on a narrow phone the connection state, the one
+       thing you need when it will not connect, silently disappears. */
+    flex-wrap: wrap;
   }
   button {
     font: inherit; font-size: 14px; font-weight: 500;
@@ -68,8 +76,15 @@ const STYLES = `
   button:hover:not(:disabled) { filter: brightness(1.1); }
   button:disabled { opacity: .45; cursor: not-allowed; }
   button.stop { background: #3a3a44; }
-  .state { font-size: 13px; color: #9b9ba6; margin-left: auto; display: flex; gap: 7px; align-items: center; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b6b77; }
+  .state {
+    font-size: 13px; color: #9b9ba6; margin-left: auto;
+    display: flex; gap: 7px; align-items: center;
+    /* A flex item will not shrink below its content without this, which is how
+       "failed — <a long ICE message>" pushes the buttons off the edge. */
+    min-width: 0;
+  }
+  .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b6b77; flex: none; }
   .dot[data-s="connected"] { background: #35c07a; }
   .dot[data-s="negotiating"], .dot[data-s="waiting-for-peer"] { background: #e0a83a; }
   .dot[data-s="failed"] { background: #e0574a; }
@@ -80,6 +95,21 @@ const STYLES = `
     transition: opacity .2s;
   }
   .pointer.on { opacity: 1; }
+
+  /* Touch input, whatever the screen size: ~31px of button is well under the
+     ~44px a finger needs to hit reliably. Keyed on the input device, not the
+     width, because a large tablet has the same problem. */
+  @media (pointer: coarse) {
+    button { padding: 12px 18px; min-height: 44px; }
+  }
+
+  /* Narrow *widget*, not narrow screen. At this size the state label no longer
+     fits beside the buttons, so give it its own row instead of an ellipsis. */
+  @container (max-width: 380px) {
+    .bar { gap: 8px; padding: 8px 10px; }
+    button { flex: 1 1 auto; }
+    .state { margin-left: 0; flex-basis: 100%; order: -1; }
+  }
 `;
 
 export class ScreenShareElement extends HTMLElement {
@@ -154,6 +184,21 @@ export class ScreenShareElement extends HTMLElement {
     this.session = null;
   }
 
+  /**
+   * Whether this device can produce a stream to share.
+   *
+   * Feature detection, never user-agent sniffing: the seam counts too, so an
+   * automated run that supplies `captureSource` is never gated out. A page that
+   * assigns the seam *after* insertion should set an attribute as well, which
+   * re-runs build() through attributeChangedCallback.
+   */
+  private captureSupported(): boolean {
+    return (
+      typeof this.captureSource === "function" ||
+      typeof navigator.mediaDevices?.getDisplayMedia === "function"
+    );
+  }
+
   /** (Re)populate the shadow root. Safe to call repeatedly. */
   private build(): void {
     this.root.replaceChildren();
@@ -190,11 +235,27 @@ export class ScreenShareElement extends HTMLElement {
     this.emptyMsg = wrap.querySelector(".empty")!;
 
     const host = this.mode === "host";
+    // Screen capture is a desktop capability. iOS has no API for it at all and
+    // Android browsers do not expose one either, so on a phone the host button
+    // is a button that throws. Say so instead, and point at the role that does
+    // work on this device.
+    const canCapture = this.captureSupported();
     this.shareBtn.textContent = host ? "Share screen" : "Waiting for host";
-    this.shareBtn.disabled = !host;
+    this.shareBtn.disabled = !host || !canCapture;
     this.emptyMsg.textContent = host
-      ? "Click “Share screen” to start."
+      ? canCapture
+        ? "Click “Share screen” to start."
+        : "This browser cannot share a screen — phones and tablets have no screen-capture API. Open this room as a viewer instead."
       : "Waiting for the host to share…";
+    if (host && !canCapture) {
+      this.dispatchEvent(
+        new CustomEvent("ss-error", {
+          detail: { error: "capture-unsupported" },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
 
     this.shareBtn.addEventListener("click", () => void this.startShare());
     this.stopBtn.addEventListener("click", () => this.stopShare());
@@ -339,8 +400,12 @@ export class ScreenShareElement extends HTMLElement {
         (() => navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }));
       const stream = await capture();
 
+      const track = stream.getVideoTracks()[0];
+      // Screen content is mostly text. Tell the encoder to hold detail rather
+      // than frame rate when it has to trade one for the other.
+      if (track) track.contentHint = "detail";
       // The browser's own "Stop sharing" affordance ends the track directly.
-      stream.getVideoTracks()[0]?.addEventListener("ended", () => this.stopShare());
+      track?.addEventListener("ended", () => this.stopShare());
 
       this.video.srcObject = stream;
       this.emptyMsg.textContent = "";

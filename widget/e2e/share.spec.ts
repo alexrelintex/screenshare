@@ -347,6 +347,46 @@ test("a touch tap moves the remote pointer, which then fades on its own", async 
   await ctx.close();
 });
 
+test("a device without screen capture explains itself instead of offering a dead button", async ({
+  browser,
+}) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  // Stand in for a phone: same absent API, without needing a phone. Note this
+  // exercises the gate, not getDisplayMedia itself — nothing headless can.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", {
+      value: undefined,
+      configurable: true,
+    });
+  });
+  // fake=false so the captureSource seam is left unset and the gate applies.
+  await page.goto(url(room(), "host", false));
+  await waitForWidget(page);
+
+  const ui = await page.evaluate(() => {
+    const root = document.querySelector("screen-share")!.shadowRoot!;
+    return {
+      disabled: root.querySelector<HTMLButtonElement>("button.share")!.disabled,
+      message: root.querySelector(".empty")!.textContent ?? "",
+    };
+  });
+  expect(ui.disabled, "share button should be disabled where capture is impossible").toBe(true);
+  expect(ui.message).toContain("cannot share a screen");
+
+  const errors = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __ss: { events: { name: string; detail: { error?: string } }[] };
+        }
+      ).__ss.events.filter((e) => e.name === "ss-error").map((e) => e.detail?.error),
+  );
+  expect(errors).toContain("capture-unsupported");
+
+  await ctx.close();
+});
+
 test("third peer is rejected with room-full", async ({ browser }) => {
   const r = room();
   const ctx = await browser.newContext();
