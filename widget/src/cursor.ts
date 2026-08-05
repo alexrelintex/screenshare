@@ -16,6 +16,17 @@ export interface CursorMessage extends NormalizedPoint {
   type: "cursor";
 }
 
+/**
+ * A deliberate point-at-this, distinct from the continuous cursor stream.
+ *
+ * Separate from CursorMessage because the host renders it differently: a cursor
+ * says "my finger is here", a tap says "look here", and a viewer cannot express
+ * the second with the first.
+ */
+export interface TapMessage extends NormalizedPoint {
+  type: "tap";
+}
+
 export interface Rect {
   left: number;
   top: number;
@@ -81,17 +92,27 @@ export function denormalize(p: NormalizedPoint, rect: Rect): { x: number; y: num
   };
 }
 
-/** True if `value` is a well-formed cursor message from the data channel. */
-export function isCursorMessage(value: unknown): value is CursorMessage {
+/** Shared shape check: a `type` tag plus finite x/y. */
+function isPointMessage(value: unknown, type: string): boolean {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
-    v.type === "cursor" &&
+    v.type === type &&
     typeof v.x === "number" &&
     typeof v.y === "number" &&
     Number.isFinite(v.x) &&
     Number.isFinite(v.y)
   );
+}
+
+/** True if `value` is a well-formed cursor message from the data channel. */
+export function isCursorMessage(value: unknown): value is CursorMessage {
+  return isPointMessage(value, "cursor");
+}
+
+/** True if `value` is a well-formed tap message from the data channel. */
+export function isTapMessage(value: unknown): value is TapMessage {
+  return isPointMessage(value, "tap");
 }
 
 /**

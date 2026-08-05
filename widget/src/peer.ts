@@ -7,7 +7,7 @@
  */
 
 import type { NormalizedPoint } from "./cursor.js";
-import { isCursorMessage } from "./cursor.js";
+import { isCursorMessage, isTapMessage } from "./cursor.js";
 import type { ServerMessage } from "./protocol.js";
 import { parseServerMessage, signalingUrl } from "./protocol.js";
 
@@ -34,6 +34,7 @@ export interface PeerOptions {
   onState?: (state: ConnState, detail?: string) => void;
   onRemoteStream?: (stream: MediaStream) => void;
   onRemoteCursor?: (point: NormalizedPoint) => void;
+  onRemoteTap?: (point: NormalizedPoint) => void;
   onError?: (error: Error) => void;
 }
 
@@ -184,6 +185,8 @@ export class PeerSession {
       }
       if (isCursorMessage(parsed)) {
         this.opts.onRemoteCursor?.({ x: parsed.x, y: parsed.y });
+      } else if (isTapMessage(parsed)) {
+        this.opts.onRemoteTap?.({ x: parsed.x, y: parsed.y });
       }
     };
   }
@@ -312,6 +315,15 @@ export class PeerSession {
   sendCursor(point: NormalizedPoint): void {
     if (this.channel?.readyState !== "open") return;
     this.channel.send(JSON.stringify({ type: "cursor", x: point.x, y: point.y }));
+  }
+
+  /**
+   * A deliberate point-at-this. Never throttled — a tap is one intentional
+   * event, and dropping it is dropping the whole message.
+   */
+  sendTap(point: NormalizedPoint): void {
+    if (this.channel?.readyState !== "open") return;
+    this.channel.send(JSON.stringify({ type: "tap", x: point.x, y: point.y }));
   }
 
   close(): void {

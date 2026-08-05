@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { contentRect, denormalize, isCursorMessage, normalize, throttle } from "./cursor.js";
+import {
+  contentRect,
+  denormalize,
+  isCursorMessage,
+  isTapMessage,
+  normalize,
+  throttle,
+} from "./cursor.js";
 
 const RECT = { left: 100, top: 50, width: 400, height: 200 };
 
@@ -128,6 +135,28 @@ describe("isCursorMessage", () => {
     ["Infinity", { type: "cursor", x: Infinity, y: 0 }],
   ])("rejects %s", (_label, value) => {
     expect(isCursorMessage(value)).toBe(false);
+  });
+});
+
+describe("isTapMessage", () => {
+  it("accepts a well-formed tap", () => {
+    expect(isTapMessage({ type: "tap", x: 0.5, y: 0.25 })).toBe(true);
+  });
+
+  it("does not confuse the two point messages", () => {
+    // Each validator must reject the other's type, or a tap would render as a
+    // cursor move and never draw a ripple.
+    expect(isTapMessage({ type: "cursor", x: 0.5, y: 0.5 })).toBe(false);
+    expect(isCursorMessage({ type: "tap", x: 0.5, y: 0.5 })).toBe(false);
+  });
+
+  it("rejects malformed coordinates", () => {
+    expect(isTapMessage({ type: "tap", x: "0.5", y: 0.5 })).toBe(false);
+    expect(isTapMessage({ type: "tap", x: NaN, y: 0.5 })).toBe(false);
+    expect(isTapMessage({ type: "tap", x: Infinity, y: 0.5 })).toBe(false);
+    expect(isTapMessage({ type: "tap" })).toBe(false);
+    expect(isTapMessage(null)).toBe(false);
+    expect(isTapMessage("tap")).toBe(false);
   });
 });
 

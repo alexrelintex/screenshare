@@ -143,8 +143,9 @@
   el.setAttribute("mode", mode);
 
   // Event log the E2E test asserts against.
-  window.__ss = { events: [], cursors: [] };
-  for (const name of ["ss-state", "ss-stream", "ss-sharing", "ss-stopped", "ss-error"]) {
+  window.__ss = { events: [], cursors: [], taps: [] };
+  el.addEventListener("ss-tap", (e) => window.__ss.taps.push(e.detail));
+  for (const name of ["ss-state", "ss-stream", "ss-sharing", "ss-stopped", "ss-error", "ss-tap"]) {
     el.addEventListener(name, (e) => window.__ss.events.push({ name, detail: e.detail }));
   }
   el.addEventListener("ss-cursor", (e) => window.__ss.cursors.push(e.detail));

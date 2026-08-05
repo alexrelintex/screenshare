@@ -1,7 +1,7 @@
 # screen-share
 
 An embeddable, dependency-free custom element for **1:1 WebRTC screen sharing with a remote
-cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **15.0 KB minified.**
+cursor**. Drop one `<script>` tag on a page, add `<screen-share>`, done. **17.2 KB minified.**
 
 Media is peer-to-peer — the server relays signaling only and never sees a video frame.
 
@@ -48,6 +48,7 @@ All bubble and cross the shadow boundary (`composed: true`).
 | `ss-state` | `{ state, detail }` | Connection state changes |
 | `ss-stream` | `{ stream }` | A remote MediaStream arrives |
 | `ss-cursor` | `{ x, y }` | Remote pointer moved (0..1 normalised) |
+| `ss-tap` | `{ x, y }` | Viewer tapped or clicked a specific spot — "look here", distinct from the continuous pointer. The host draws a ripple there. |
 | `ss-sharing` | — | Local capture started |
 | `ss-stopped` | — | Sharing stopped |
 | `ss-error` | `{ error }` | Something failed. `"capture-unsupported"` on a device with no screen-capture API — phones and tablets — where host mode cannot work and the share button is disabled. |
@@ -62,7 +63,13 @@ The viewer's pointer is shown over the host's own preview. Coordinates travel **
 so pixels would land in the wrong place. Messages are throttled to 30 Hz with a guaranteed
 trailing send, so the pointer never freezes slightly short of where it stopped.
 
-This is a *pointer*, not remote control. Nothing is injected into the host's input stream.
+A tap or click — pointer down and up within 12 px and 700 ms — additionally sends a discrete
+`tap`, and the host draws a ripple there. It renders at the tap's own coordinates rather than
+wherever the dot currently sits: the data channel is unordered, so a tap can arrive after the
+moves that followed it. A drag sends only cursor updates, never a tap.
+
+This is a *pointer*, not remote control. Nothing is injected into the host's input stream — the
+ripple is drawn inside the widget and the host's operating system never hears about it.
 
 ---
 

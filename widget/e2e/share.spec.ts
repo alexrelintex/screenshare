@@ -483,6 +483,101 @@ test("a link with no mode picks the role the device can perform", async ({ brows
   await deskCtx.close();
 });
 
+test("a tap draws a ripple on the host where the viewer pointed; a drag does not", async ({
+  browser,
+}) => {
+  const r = room();
+  const ctx = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const host = await ctx.newPage();
+  const viewer = await ctx.newPage();
+
+  await host.goto(url(r, "host"));
+  await waitForWidget(host);
+  await viewer.goto(url(r, "viewer"));
+  await waitForWidget(viewer);
+
+  await host.locator("screen-share").evaluate((el) => {
+    el.shadowRoot!.querySelector<HTMLButtonElement>("button.share")!.click();
+  });
+  await expect
+    .poll(
+      () =>
+        viewer.evaluate(
+          () =>
+            document
+              .querySelector("screen-share")!
+              .shadowRoot!.querySelector<HTMLVideoElement>("video")!.videoWidth,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
+
+  const box = await viewer.evaluate(() => {
+    const v = document
+      .querySelector("screen-share")!
+      .shadowRoot!.querySelector<HTMLVideoElement>("video")!;
+    const b = v.getBoundingClientRect();
+    return { x: b.left, y: b.top, w: b.width, h: b.height };
+  });
+  await viewer.bringToFront();
+
+  // Tap one quarter in, so a wrong mapping cannot be mistaken for a right one
+  // the way a centre tap could.
+  await viewer.touchscreen.tap(box.x + box.w * 0.25, box.y + box.h * 0.75);
+
+  await expect
+    .poll(
+      () => host.evaluate(() => (window as unknown as { __ss: { taps: unknown[] } }).__ss.taps.length),
+      { timeout: 20_000, message: "a tap produced no ss-tap on the host" },
+    )
+    .toBe(1);
+
+  const tap = await host.evaluate(
+    () => (window as unknown as { __ss: { taps: { x: number; y: number }[] } }).__ss.taps[0]!,
+  );
+  expect(tap.x).toBeCloseTo(0.25, 1);
+  expect(tap.y).toBeCloseTo(0.75, 1);
+
+  // The ripple is transient, so catch it while it exists, then see it clear.
+  await expect
+    .poll(
+      () =>
+        host.evaluate(
+          () =>
+            document.querySelector("screen-share")!.shadowRoot!.querySelectorAll(".ripple").length,
+        ),
+      { timeout: 5_000, message: "no ripple was drawn" },
+    )
+    .toBeGreaterThan(0);
+  await expect
+    .poll(
+      () =>
+        host.evaluate(
+          () =>
+            document.querySelector("screen-share")!.shadowRoot!.querySelectorAll(".ripple").length,
+        ),
+      { timeout: 8_000, message: "the ripple never cleaned itself up" },
+    )
+    .toBe(0);
+
+  // A drag is a pointing gesture, not a "look here" — it must not add a tap.
+  await viewer.mouse.move(box.x + box.w * 0.2, box.y + box.h * 0.2);
+  await viewer.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await viewer.mouse.move(box.x + box.w * (0.2 + i * 0.08), box.y + box.h * 0.2);
+    await viewer.waitForTimeout(40);
+  }
+  await viewer.mouse.up();
+  await viewer.waitForTimeout(600);
+
+  expect(
+    await host.evaluate(() => (window as unknown as { __ss: { taps: unknown[] } }).__ss.taps.length),
+    "a drag should not register as a tap",
+  ).toBe(1);
+
+  await ctx.close();
+});
+
 test("third peer is rejected with room-full", async ({ browser }) => {
   const r = room();
   const ctx = await browser.newContext();

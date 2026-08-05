@@ -24,6 +24,20 @@ const CURSOR_HZ = 30;
  */
 const POINTER_IDLE_MS = 2000;
 
+/**
+ * What separates a tap from a drag.
+ *
+ * A finger never lands and lifts on exactly one pixel, so some slop is required
+ * or nothing on a touchscreen ever counts as a tap. The time limit keeps a slow
+ * reposition — finger down, think, lift — from firing a "look here" nobody
+ * meant.
+ */
+const TAP_SLOP_PX = 12;
+const TAP_MAX_MS = 700;
+
+/** Lifetime of the ripple the host draws at a tap. Matches the CSS animation. */
+const RIPPLE_MS = 620;
+
 const STYLES = `
   :host {
     all: initial;
@@ -95,6 +109,27 @@ const STYLES = `
     transition: opacity .2s;
   }
   .pointer.on { opacity: 1; }
+  /* A tap is a moment, not a state: it expands and clears itself. Positioned
+     with left/top so the animation owns transform outright. */
+  .ripple {
+    position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+    border-radius: 50%; pointer-events: none;
+    border: 2px solid var(--ss-accent);
+    background: rgba(79,140,255,.18);
+    animation: ss-ripple 620ms cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  @keyframes ss-ripple {
+    from { transform: scale(.4); opacity: 1; }
+    to   { transform: scale(2.6); opacity: 0; }
+  }
+  /* Still announce the location, just without the expansion. */
+  @media (prefers-reduced-motion: reduce) {
+    .ripple { animation: ss-ripple-hold 620ms steps(1, end) forwards; }
+    @keyframes ss-ripple-hold {
+      from { transform: scale(1.4); opacity: 1; }
+      to   { transform: scale(1.4); opacity: 0; }
+    }
+  }
 
   /* Touch input, whatever the screen size: ~31px of button is well under the
      ~44px a finger needs to hit reliably. Keyed on the input device, not the
@@ -285,16 +320,39 @@ export class ScreenShareElement extends HTMLElement {
         this.sendCursor(normalize(ev.clientX, ev.clientY, this.videoRect()));
       };
       this.video.addEventListener("pointermove", send);
+
+      // Where and when the pointer landed, to tell a tap from a drag on release.
+      let downAt = 0;
+      let downX = 0;
+      let downY = 0;
+
       // A touch reports nothing until it lands, so without this a tap moves
       // the remote pointer only if the finger then drags.
-      this.video.addEventListener("pointerdown", send);
+      this.video.addEventListener("pointerdown", (ev) => {
+        downAt = ev.timeStamp;
+        downX = ev.clientX;
+        downY = ev.clientY;
+        send(ev);
+      });
       this.video.addEventListener("pointerleave", () => this.sendCursor.flush());
       // `pointerup` and `pointercancel` are the touch equivalents of leaving:
       // the finger is gone. Cancel in particular fires when the browser decides
       // the gesture was a scroll after all — without flushing here the final
       // position is simply dropped.
-      this.video.addEventListener("pointerup", () => this.sendCursor.flush());
-      this.video.addEventListener("pointercancel", () => this.sendCursor.flush());
+      this.video.addEventListener("pointerup", (ev) => {
+        this.sendCursor.flush();
+        // Decided on release, not on press: at press time a drag and a tap are
+        // indistinguishable, and a ripple for every drag is noise.
+        const travelled = Math.hypot(ev.clientX - downX, ev.clientY - downY);
+        if (downAt > 0 && ev.timeStamp - downAt <= TAP_MAX_MS && travelled <= TAP_SLOP_PX) {
+          this.session?.sendTap(normalize(ev.clientX, ev.clientY, this.videoRect()));
+        }
+        downAt = 0;
+      });
+      this.video.addEventListener("pointercancel", () => {
+        this.sendCursor.flush();
+        downAt = 0;
+      });
     }
   }
 
@@ -356,6 +414,7 @@ export class ScreenShareElement extends HTMLElement {
         );
       },
       onRemoteCursor: (p) => this.showPointer(p),
+      onRemoteTap: (p) => this.showTap(p),
       onError: (err) => {
         this.dispatchEvent(
           new CustomEvent("ss-error", { detail: { error: err }, bubbles: true, composed: true }),
@@ -385,6 +444,42 @@ export class ScreenShareElement extends HTMLElement {
     this.armPointerIdle();
     this.dispatchEvent(
       new CustomEvent("ss-cursor", { detail: p, bubbles: true, composed: true }),
+    );
+  }
+
+  /**
+   * Draw a ripple where the viewer tapped.
+   *
+   * At the tap's own coordinates, deliberately — not wherever the cursor dot
+   * currently sits. The data channel is unordered, so a tap can arrive after
+   * the moves that followed it, and anchoring to the dot would put the marker
+   * somewhere the viewer never pointed.
+   */
+  private showTap(p: NormalizedPoint): void {
+    const r = this.videoRect();
+    const box = this.getBoundingClientRect();
+    const pt = denormalize(p, {
+      left: r.left - box.left,
+      top: r.top - box.top,
+      width: r.width,
+      height: r.height,
+    });
+
+    // One element per tap: two taps in quick succession should both be visible,
+    // which reusing a single node and restarting its animation cannot do.
+    const ripple = document.createElement("div");
+    ripple.className = "ripple";
+    ripple.style.left = `${pt.x}px`;
+    ripple.style.top = `${pt.y}px`;
+    this.stage.append(ripple);
+    const drop = (): void => ripple.remove();
+    ripple.addEventListener("animationend", drop);
+    // Belt and braces: if the animation never runs (a background tab throttling
+    // it, say) the node would otherwise accumulate for the whole session.
+    setTimeout(drop, RIPPLE_MS + 400);
+
+    this.dispatchEvent(
+      new CustomEvent("ss-tap", { detail: p, bubbles: true, composed: true }),
     );
   }
 
