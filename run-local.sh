@@ -92,14 +92,13 @@ ok "node $(node --version), $(basename "$UV") $($UV --version | awk '{print $2}'
 # ---------------------------------------------------------------------- install
 if [ ! -x server/.venv/bin/uvicorn ]; then
   say "installing python deps (first run only)"
-  $UV venv server/.venv >/dev/null 2>&1 || die "uv venv failed"
-  VIRTUAL_ENV=server/.venv $UV pip install -q -e "server[dev]" || die "pip install failed"
+  (cd server && $UV sync -q --extra dev) || die "uv sync failed"
 fi
 ok "python deps ready"
 
 if [ ! -d widget/node_modules ]; then
   say "installing node deps (first run only)"
-  (cd widget && npm install --no-audit --no-fund >/dev/null 2>&1) || die "npm install failed"
+  (cd widget && npm ci --no-audit --no-fund >/dev/null 2>&1) || die "npm ci failed"
 fi
 ok "node deps ready"
 

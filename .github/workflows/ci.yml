@@ -7,6 +7,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
       - uses: actions/setup-node@v7.0.0
         with: { node-version: '22' }
       - run: make setup
@@ -19,6 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
       - uses: actions/setup-node@v7.0.0
         with: { node-version: '22' }
       - run: make setup

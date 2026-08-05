@@ -19,10 +19,9 @@ VENV := $(SRV)/.venv
 help: ## show targets
 	@awk 'BEGIN{FS=":.*## "} /^[a-z-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-setup: ## install all dependencies
-	uv venv $(VENV)
-	VIRTUAL_ENV=$(VENV) uv pip install -e "$(SRV)[dev]"
-	cd $(WEB) && npm install --no-audit --no-fund
+setup: ## install all dependencies (from the lockfiles — no resolution)
+	cd $(SRV) && uv sync --extra dev
+	cd $(WEB) && npm ci --no-audit --no-fund
 
 lint: ## static checks
 	$(VENV)/bin/ruff check $(SRV)
