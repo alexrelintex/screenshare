@@ -1,0 +1,22 @@
+# Render blueprint — the public signaling relay behind the GitHub Pages demo.
+#
+# One-time setup: Render dashboard > New > Blueprint > connect this repo.
+# After that every push to main redeploys. Render assigns a URL of the form
+# https://screenshare-signaling.onrender.com; put that in the SIGNALING_URL
+# repository variable so the Pages workflow bakes it into the demo page.
+#
+# The service serves signaling only. Media is peer-to-peer and never reaches it.
+services:
+  - type: web
+    name: screenshare-signaling
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    healthCheckPath: /healthz
+    autoDeploy: true
+    # Free instances sleep after ~15 minutes idle and cold-start on the next
+    # request, so the first visitor after a quiet spell waits. Everything is
+    # in-memory, so a sleep also drops every room — which is harmless here,
+    # since a room only matters while its two peers are connected.

@@ -36,6 +36,7 @@
   <div id="mount"></div>
 </main>
 
+<script src="./config.js"></script>
 <script src="../dist/screenshare.js"></script>
 <script>
   const qs = new URLSearchParams(location.search);
@@ -57,7 +58,11 @@
   }
 
   const mode = qs.get("mode") === "viewer" ? "viewer" : "host";
-  const signaling = qs.get("signaling") || "http://127.0.0.1:8000";
+  // Precedence: explicit ?signaling= wins, then whatever config.js was
+  // published with (set by the Pages workflow, empty in the repo), then the
+  // local default. A page served over https must use an https signaling URL —
+  // the browser blocks a ws:// connection from a secure page as mixed content.
+  const signaling = qs.get("signaling") || window.SS_SIGNALING || "http://127.0.0.1:8000";
 
   // Carry every existing param across. Building these as `?room=..&mode=..`
   // silently dropped `signaling`, so switching roles from the page lost a

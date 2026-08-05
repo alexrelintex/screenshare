@@ -1,0 +1,75 @@
+name: pages
+
+# Publishes the demo page and the built bundle to GitHub Pages.
+#
+# The signaling server is NOT published here — it runs on Render (see
+# render.yaml). Its URL comes from the SIGNALING_URL repository variable and is
+# written into demo/config.js at publish time, so the committed copy stays
+# empty and local runs keep defaulting to 127.0.0.1:8000.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a run mid-publish — a half-deployed site is worse than a stale
+# one. A newer push simply queues behind the one in flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with: { node-version: '22' }
+      - run: cd widget && npm ci --no-audit --no-fund
+      - run: cd widget && npm run build
+
+      - name: assemble site
+        env:
+          SIGNALING_URL: ${{ vars.SIGNALING_URL }}
+        run: |
+          set -euo pipefail
+
+          # Fail loudly rather than publish a demo pointing at 127.0.0.1, which
+          # would look fine and connect to nothing.
+          if [ -z "${SIGNALING_URL}" ]; then
+            echo "::error::SIGNALING_URL repository variable is not set."
+            echo "Set it to the Render service URL: gh variable set SIGNALING_URL --body https://<service>.onrender.com"
+            exit 1
+          fi
+          case "$SIGNALING_URL" in
+            https://*) ;;
+            *) echo "::error::SIGNALING_URL must be https:// — Pages is served over TLS and a browser blocks a ws:// upgrade from a secure page as mixed content."; exit 1 ;;
+          esac
+
+          mkdir -p _site
+          cp -R widget/demo _site/demo
+          cp -R widget/dist _site/dist
+          printf 'window.SS_SIGNALING = "%s";\n' "$SIGNALING_URL" > _site/demo/config.js
+
+          # Bare /screenshare/ should land somewhere useful. The demo page mints
+          # a fresh room id when none is supplied, so this is a working entry.
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>screen-share demo</title>
+          <meta http-equiv="refresh" content="0; url=./demo/index.html">
+          <p><a href="./demo/index.html">screen-share demo</a></p>
+          HTML
+
+      - uses: actions/configure-pages@v6.0.0
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with: { path: _site }
+      - id: deployment
+        uses: actions/deploy-pages@v5.0.0
