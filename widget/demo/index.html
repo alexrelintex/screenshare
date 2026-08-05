@@ -57,7 +57,19 @@
     history.replaceState(null, "", `${location.pathname}?${qs}`);
   }
 
-  const mode = qs.get("mode") === "viewer" ? "viewer" : "host";
+  // Role follows what the device can actually do. Screen capture is a desktop
+  // capability, so defaulting a phone to host hands it a button that cannot
+  // work; picking the role here means one link serves both ends of a session —
+  // the laptop that opens it hosts, the phone that scans it views.
+  // An explicit ?mode= always wins, so the copy/open links keep working.
+  const explicitMode = qs.get("mode");
+  const canCapture = typeof navigator.mediaDevices?.getDisplayMedia === "function";
+  const mode =
+    explicitMode === "viewer" || explicitMode === "host"
+      ? explicitMode
+      : canCapture
+        ? "host"
+        : "viewer";
   // Precedence: explicit ?signaling= wins, then whatever config.js was
   // published with (set by the Pages workflow, empty in the repo), then the
   // local default. A page served over https must use an https signaling URL —

@@ -439,6 +439,50 @@ test("the outbound encoder is capped", async ({ browser }) => {
   await ctx.close();
 });
 
+test("a link with no mode picks the role the device can perform", async ({ browser }) => {
+  const r = room();
+
+  // A phone: no screen-capture API, so the only useful role is viewer.
+  const phoneCtx = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const phone = await phoneCtx.newPage();
+  await phone.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", {
+      value: undefined,
+      configurable: true,
+    });
+  });
+  await phone.goto(`/demo/index.html?room=${r}`);
+  await waitForWidget(phone);
+  expect(
+    await phone.locator("screen-share").getAttribute("mode"),
+    "a capture-less device should default to viewer",
+  ).toBe("viewer");
+
+  // The same link on a desktop, where capture exists, hosts.
+  const deskCtx = await browser.newContext();
+  const desk = await deskCtx.newPage();
+  await desk.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", {
+      value: () => Promise.reject(new Error("not called")),
+      configurable: true,
+    });
+  });
+  await desk.goto(`/demo/index.html?room=${r}`);
+  await waitForWidget(desk);
+  expect(
+    await desk.locator("screen-share").getAttribute("mode"),
+    "a device with capture should default to host",
+  ).toBe("host");
+
+  // An explicit mode still overrides the detection in both directions.
+  await desk.goto(`/demo/index.html?room=${room()}&mode=viewer`);
+  await waitForWidget(desk);
+  expect(await desk.locator("screen-share").getAttribute("mode")).toBe("viewer");
+
+  await phoneCtx.close();
+  await deskCtx.close();
+});
+
 test("third peer is rejected with room-full", async ({ browser }) => {
   const r = room();
   const ctx = await browser.newContext();
