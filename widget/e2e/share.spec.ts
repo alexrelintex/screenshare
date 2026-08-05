@@ -387,6 +387,58 @@ test("a device without screen capture explains itself instead of offering a dead
   await ctx.close();
 });
 
+test("the outbound encoder is capped", async ({ browser }) => {
+  const r = room();
+  const ctx = await browser.newContext();
+  const host = await ctx.newPage();
+  const viewer = await ctx.newPage();
+
+  await host.goto(url(r, "host"));
+  await waitForWidget(host);
+  await viewer.goto(url(r, "viewer"));
+  await waitForWidget(viewer);
+
+  // The sender only exists once tracks are added, so share first.
+  await host.locator("screen-share").evaluate((el) => {
+    el.shadowRoot!.querySelector<HTMLButtonElement>("button.share")!.click();
+  });
+  await expect
+    .poll(
+      () =>
+        viewer.evaluate(
+          () =>
+            document
+              .querySelector("screen-share")!
+              .shadowRoot!.querySelector<HTMLVideoElement>("video")!.videoWidth,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
+
+  // Reach the sender through the shared track: the demo page has no handle on
+  // the RTCPeerConnection, and neither should it.
+  const encodings = await host.evaluate(async () => {
+    const el = document.querySelector("screen-share")!;
+    const v = el.shadowRoot!.querySelector<HTMLVideoElement>("video")!;
+    const track = (v.srcObject as MediaStream).getVideoTracks()[0];
+    // @ts-expect-error reaching into the private session for assertion only
+    const pc = el.session?.pc as RTCPeerConnection | undefined;
+    if (!pc) return { hint: track?.contentHint, encodings: null };
+    const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+    return {
+      hint: track?.contentHint,
+      encodings: sender?.getParameters().encodings ?? null,
+    };
+  });
+
+  expect(encodings.hint, "screen content should hint at detail over frame rate").toBe("detail");
+  expect(encodings.encodings, "no video sender parameters found").not.toBeNull();
+  expect(encodings.encodings![0]?.maxBitrate).toBe(1_500_000);
+  expect(encodings.encodings![0]?.maxFramerate).toBe(15);
+
+  await ctx.close();
+});
+
 test("third peer is rejected with room-full", async ({ browser }) => {
   const r = room();
   const ctx = await browser.newContext();

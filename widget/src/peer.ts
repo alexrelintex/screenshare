@@ -27,6 +27,10 @@ export interface PeerOptions {
   room: string;
   role: Role;
   iceServers?: RTCIceServer[];
+  /** Ceiling for the outbound video encoder, bits per second. See MAX_BITRATE. */
+  maxBitrate?: number;
+  /** Ceiling for the outbound frame rate. See MAX_FRAMERATE. */
+  maxFramerate?: number;
   onState?: (state: ConnState, detail?: string) => void;
   onRemoteStream?: (stream: MediaStream) => void;
   onRemoteCursor?: (point: NormalizedPoint) => void;
@@ -39,6 +43,24 @@ export interface PeerOptions {
  * without a TURN server, which you must supply yourself — see README.
  */
 export const DEFAULT_ICE: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
+/**
+ * Encoder ceilings for screen content.
+ *
+ * These do not help with congestion — WebRTC's own bandwidth estimation already
+ * ratchets down on a bad link, and does it better than a fixed number can. What
+ * a ceiling buys is a bound on metered data and an end to the encoder spending
+ * megabits on a screen that is mostly not moving. At 1.5 Mbps a session costs a
+ * mobile viewer roughly 11 MB per minute.
+ *
+ * The frame-rate cap is the one that protects legibility. Screen content is
+ * spatially detailed and temporally static: with 30 fps to fill, the encoder
+ * spends its budget on redundant frames and softens the text. Capping frames
+ * frees those bits for sharpness, which is what `contentHint = "detail"` on the
+ * track is asking for in the first place.
+ */
+export const MAX_BITRATE = 1_500_000;
+export const MAX_FRAMERATE = 15;
 
 const CURSOR_CHANNEL = "cursor";
 
@@ -174,7 +196,36 @@ export class PeerSession {
     for (const track of stream.getTracks()) {
       pc.addTrack(track, stream);
     }
+    await this.applyEncodingLimits(pc);
     if (this.peerPresent) await this.offer();
+  }
+
+  /**
+   * Cap the outbound video encoder.
+   *
+   * Three details the API demands. The object handed to setParameters must be
+   * the one getParameters returned — it carries a transaction id and a freshly
+   * built object is rejected. `encodings` can legitimately be empty before
+   * negotiation, so it needs seeding rather than indexing. And a rejection here
+   * must not fail the share: the stream is already flowing and an uncapped
+   * stream beats no stream.
+   */
+  private async applyEncodingLimits(pc: RTCPeerConnection): Promise<void> {
+    const maxBitrate = this.opts.maxBitrate ?? MAX_BITRATE;
+    const maxFramerate = this.opts.maxFramerate ?? MAX_FRAMERATE;
+    const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+    if (!sender) return;
+    try {
+      const params = sender.getParameters();
+      if (!params.encodings?.length) params.encodings = [{}];
+      for (const encoding of params.encodings) {
+        encoding.maxBitrate = maxBitrate;
+        encoding.maxFramerate = maxFramerate;
+      }
+      await sender.setParameters(params);
+    } catch {
+      // Some browser/state combinations reject this. Sharing continues uncapped.
+    }
   }
 
   private async offer(): Promise<void> {

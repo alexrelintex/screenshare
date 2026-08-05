@@ -113,7 +113,7 @@ const STYLES = `
 `;
 
 export class ScreenShareElement extends HTMLElement {
-  static observedAttributes = ["room", "signaling", "mode"];
+  static observedAttributes = ["room", "signaling", "mode", "max-bitrate"];
 
   /**
    * Test / integration seam. Defaults to getDisplayMedia. Overriding it lets
@@ -141,6 +141,16 @@ export class ScreenShareElement extends HTMLElement {
   get signaling(): string {
     return this.getAttribute("signaling") ?? "";
   }
+  /**
+   * Outbound encoder ceiling in bits per second. Absent, zero or unparseable
+   * means the default — an embedder on a LAN can raise it, and `0` should not
+   * be read as "cap at nothing", which would silence the stream entirely.
+   */
+  get maxBitrate(): number | undefined {
+    const raw = Number(this.getAttribute("max-bitrate"));
+    return Number.isFinite(raw) && raw > 0 ? raw : undefined;
+  }
+
   get mode(): Role {
     return this.getAttribute("mode") === "viewer" ? "viewer" : "host";
   }
@@ -335,6 +345,7 @@ export class ScreenShareElement extends HTMLElement {
       signaling: this.signaling,
       room: this.room,
       role: this.mode,
+      maxBitrate: this.maxBitrate,
       onState: (s, d) => this.setState(s, d),
       onRemoteStream: (stream) => {
         this.video.srcObject = stream;

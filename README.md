@@ -34,6 +34,7 @@ buttons) and an automated test asserts none of it penetrates.
 | `room` | yes | any string | Peers sharing a room id connect. Percent-encoded before use. |
 | `signaling` | yes | URL | `http(s)://` is upgraded to `ws(s)://` automatically. |
 | `mode` | no | `host` \| `viewer` | Defaults to `host`. |
+| `max-bitrate` | no | bits per second | Outbound encoder ceiling. Defaults to `1500000` (~11 MB/min) with a 15 fps cap, tuned for legible text on a metered link. Raise it on a LAN. Invalid or `0` falls back to the default. |
 
 Attributes may be set before *or after* insertion — the element reconnects when they change,
 debounced to one restart per microtask.
