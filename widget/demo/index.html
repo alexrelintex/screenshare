@@ -100,16 +100,20 @@
   // because a headless browser has no desktop to capture. Real users never
   // hit this path — captureSource stays undefined and getDisplayMedia is used.
   if (qs.get("fakeCapture") === "1") {
+    // Size is overridable so tests can drive a stream whose aspect ratio does
+    // not match the stage. 16:9 into a 16:9 stage produces no letterbox bars,
+    // which is exactly the case that hides cursor-mapping bugs.
+    const [capW, capH] = (qs.get("captureSize") ?? "640x360").split("x").map(Number);
     el.captureSource = async () => {
       const canvas = document.createElement("canvas");
-      canvas.width = 640;
-      canvas.height = 360;
+      canvas.width = capW;
+      canvas.height = capH;
       const ctx = canvas.getContext("2d");
       let f = 0;
       const draw = () => {
         f++;
         ctx.fillStyle = `hsl(${f % 360} 70% 45%)`;
-        ctx.fillRect(0, 0, 640, 360);
+        ctx.fillRect(0, 0, capW, capH);
         ctx.fillStyle = "#fff";
         ctx.font = "32px monospace";
         ctx.fillText(`frame ${f}`, 24, 60);

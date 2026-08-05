@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { denormalize, isCursorMessage, normalize, throttle } from "./cursor.js";
+import { contentRect, denormalize, isCursorMessage, normalize, throttle } from "./cursor.js";
 
 const RECT = { left: 100, top: 50, width: 400, height: 200 };
 
@@ -20,6 +20,74 @@ describe("normalize", () => {
     const p = normalize(10, 10, { left: 0, top: 0, width: 0, height: 0 });
     expect(p).toEqual({ x: 0, y: 0 });
     expect(Number.isNaN(p.x)).toBe(false);
+  });
+});
+
+describe("contentRect", () => {
+  // A 16:9 box. The bars, and therefore the whole bug, appear only when the
+  // stream's ratio differs from it.
+  const BOX = { left: 0, top: 0, width: 640, height: 360 };
+
+  it("is the element box when the ratios already agree", () => {
+    expect(contentRect(BOX, 1920, 1080)).toEqual(BOX);
+  });
+
+  it("pillarboxes a 4:3 stream — bars left and right", () => {
+    // 480-wide content centred in 640: 80px of bar on each side.
+    expect(contentRect(BOX, 640, 480)).toEqual({
+      left: 80,
+      top: 0,
+      width: 480,
+      height: 360,
+    });
+  });
+
+  it("letterboxes an ultrawide stream — bars top and bottom", () => {
+    // 21:9 into 16:9: full width, 640/(21/9) ≈ 274.3 tall, centred vertically.
+    const r = contentRect(BOX, 2560, 1080);
+    expect(r.left).toBe(0);
+    expect(r.width).toBe(640);
+    expect(r.height).toBeCloseTo(270, 5);
+    expect(r.top).toBeCloseTo(45, 5);
+  });
+
+  it("keeps the box offset rather than assuming an origin at 0,0", () => {
+    const offset = { left: 100, top: 50, width: 640, height: 360 };
+    expect(contentRect(offset, 640, 480)).toEqual({
+      left: 180,
+      top: 50,
+      width: 480,
+      height: 360,
+    });
+  });
+
+  it("falls back to the element box before any frame has decoded", () => {
+    // videoWidth/videoHeight are 0 until metadata arrives.
+    expect(contentRect(BOX, 0, 0)).toEqual(BOX);
+    expect(contentRect(BOX, 640, 0)).toEqual(BOX);
+    expect(contentRect(BOX, NaN, NaN)).toEqual(BOX);
+  });
+
+  it("falls back for a zero-sized element box instead of dividing by zero", () => {
+    const empty = { left: 0, top: 0, width: 0, height: 0 };
+    expect(contentRect(empty, 640, 480)).toEqual(empty);
+  });
+
+  it("round-trips a point through normalize and denormalize", () => {
+    // The centre of a pillarboxed 4:3 stream must survive the round trip, and
+    // must NOT be the centre of the element box's left edge.
+    const content = contentRect(BOX, 640, 480);
+    const p = normalize(320, 180, content);
+    expect(p).toEqual({ x: 0.5, y: 0.5 });
+    expect(denormalize(p, content)).toEqual({ x: 320, y: 180 });
+  });
+
+  it("maps the content edge to 0, where the element edge would over-report", () => {
+    const content = contentRect(BOX, 640, 480);
+    // x=80 is the left edge of the painted video.
+    expect(normalize(80, 0, content).x).toBe(0);
+    // Against the raw element box the same point reads as 0.125 — the bug.
+    expect(normalize(80, 0, BOX).x).toBeCloseTo(0.125, 5);
   });
 });
 

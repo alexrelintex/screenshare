@@ -9,11 +9,20 @@
  */
 
 import type { NormalizedPoint, Rect } from "./cursor.js";
-import { denormalize, normalize, throttle } from "./cursor.js";
+import { contentRect, denormalize, normalize, throttle } from "./cursor.js";
 import type { ConnState, Role } from "./peer.js";
 import { PeerSession } from "./peer.js";
 
 const CURSOR_HZ = 30;
+
+/**
+ * How long the remote pointer stays visible after the last cursor message.
+ *
+ * A mouse announces its departure with `pointerleave`; a finger does not. With
+ * no timeout the host keeps staring at a dot frozen wherever the viewer last
+ * touched, for as long as the session lasts.
+ */
+const POINTER_IDLE_MS = 2000;
 
 const STYLES = `
   :host {
@@ -33,6 +42,10 @@ const STYLES = `
   }
   .stage { position: relative; aspect-ratio: 16 / 9; background: #0d0d10; }
   video { width: 100%; height: 100%; object-fit: contain; display: block; background: #0d0d10; }
+  /* Viewer only: a drag across the video is a pointing gesture, not a scroll.
+     Without this the browser claims the gesture, fires pointercancel, and the
+     remote cursor stops dead halfway through the swipe. */
+  .viewer video { touch-action: none; }
   .empty {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -89,6 +102,8 @@ export class ScreenShareElement extends HTMLElement {
   private stateDot!: HTMLSpanElement;
   private emptyMsg!: HTMLDivElement;
   private sendCursor = throttle((_p: NormalizedPoint) => {}, 1000 / CURSOR_HZ);
+  private stage!: HTMLDivElement;
+  private pointerIdle: ReturnType<typeof setTimeout> | null = null;
 
   get room(): string {
     return this.getAttribute("room") ?? "";
@@ -134,6 +149,7 @@ export class ScreenShareElement extends HTMLElement {
 
   private teardown(): void {
     this.sendCursor.cancel();
+    this.clearPointerIdle();
     this.session?.close();
     this.session = null;
   }
@@ -158,7 +174,13 @@ export class ScreenShareElement extends HTMLElement {
         <span class="state"><span class="dot"></span><span class="label">idle</span></span>
       </div>`;
 
+    // Viewer only: the video is a pointing surface, so the browser must stop
+    // treating a drag across it as a page scroll. Host pages embedding a host-
+    // mode widget keep normal scrolling.
+    if (this.mode === "viewer") wrap.classList.add("viewer");
+
     this.root.append(style, wrap);
+    this.stage = wrap.querySelector(".stage")!;
     this.video = wrap.querySelector("video")!;
     this.pointer = wrap.querySelector(".pointer")!;
     this.shareBtn = wrap.querySelector("button.share")!;
@@ -177,23 +199,60 @@ export class ScreenShareElement extends HTMLElement {
     this.shareBtn.addEventListener("click", () => void this.startShare());
     this.stopBtn.addEventListener("click", () => this.stopShare());
 
+    // The stream dictates the stage's shape, so react whenever its dimensions
+    // land or change (a host switching monitors mid-session fires `resize`).
+    this.video.addEventListener("loadedmetadata", () => this.syncAspect());
+    this.video.addEventListener("resize", () => this.syncAspect());
+
     if (this.mode === "viewer") {
       // Viewer reports its pointer; the host sees it over their own preview.
       this.sendCursor = throttle(
         (p: NormalizedPoint) => this.session?.sendCursor(p),
         1000 / CURSOR_HZ,
       );
-      this.video.addEventListener("pointermove", (ev) => {
+      const send = (ev: PointerEvent): void => {
         this.sendCursor(normalize(ev.clientX, ev.clientY, this.videoRect()));
-      });
+      };
+      this.video.addEventListener("pointermove", send);
+      // A touch reports nothing until it lands, so without this a tap moves
+      // the remote pointer only if the finger then drags.
+      this.video.addEventListener("pointerdown", send);
       this.video.addEventListener("pointerleave", () => this.sendCursor.flush());
+      // `pointerup` and `pointercancel` are the touch equivalents of leaving:
+      // the finger is gone. Cancel in particular fires when the browser decides
+      // the gesture was a scroll after all — without flushing here the final
+      // position is simply dropped.
+      this.video.addEventListener("pointerup", () => this.sendCursor.flush());
+      this.video.addEventListener("pointercancel", () => this.sendCursor.flush());
     }
   }
 
-  /** Bounding box of the video element, in its own coordinate space. */
+  /**
+   * The box the video actually paints, in viewport coordinates.
+   *
+   * Not the element box: `object-fit: contain` letterboxes any stream whose
+   * aspect ratio differs from the stage's, and cursor coordinates must be
+   * relative to the picture, not to the bars beside it.
+   */
   private videoRect(): Rect {
     const r = this.video.getBoundingClientRect();
-    return { left: r.left, top: r.top, width: r.width, height: r.height };
+    return contentRect(
+      { left: r.left, top: r.top, width: r.width, height: r.height },
+      this.video.videoWidth,
+      this.video.videoHeight,
+    );
+  }
+
+  /**
+   * Match the stage to the stream's own aspect ratio once it is known.
+   *
+   * Two wins: the video fills the widget instead of sitting in a 16:9 letterbox
+   * (which on a portrait phone leaves it a thin strip), and the bars vanish, so
+   * the correction in videoRect() has nothing left to correct.
+   */
+  private syncAspect(): void {
+    const { videoWidth: w, videoHeight: h } = this.video;
+    if (w > 0 && h > 0) this.stage.style.aspectRatio = `${w} / ${h}`;
   }
 
   private setState(state: ConnState, detail?: string): void {
@@ -240,7 +299,7 @@ export class ScreenShareElement extends HTMLElement {
   }
 
   private showPointer(p: NormalizedPoint): void {
-    const r = this.video.getBoundingClientRect();
+    const r = this.videoRect();
     const box = this.getBoundingClientRect();
     // Position relative to the widget, not the page.
     const pt = denormalize(p, {
@@ -251,9 +310,25 @@ export class ScreenShareElement extends HTMLElement {
     });
     this.pointer.style.transform = `translate(${pt.x}px, ${pt.y}px)`;
     this.pointer.classList.add("on");
+    this.armPointerIdle();
     this.dispatchEvent(
       new CustomEvent("ss-cursor", { detail: p, bubbles: true, composed: true }),
     );
+  }
+
+  /** Hide the remote pointer if no further cursor message arrives. */
+  private armPointerIdle(): void {
+    if (this.pointerIdle !== null) clearTimeout(this.pointerIdle);
+    this.pointerIdle = setTimeout(() => {
+      this.pointerIdle = null;
+      this.pointer.classList.remove("on");
+    }, POINTER_IDLE_MS);
+  }
+
+  private clearPointerIdle(): void {
+    if (this.pointerIdle === null) return;
+    clearTimeout(this.pointerIdle);
+    this.pointerIdle = null;
   }
 
   private async startShare(): Promise<void> {
@@ -288,7 +363,10 @@ export class ScreenShareElement extends HTMLElement {
     if (src instanceof MediaStream) src.getTracks().forEach((t) => t.stop());
     this.video.srcObject = null;
     this.emptyMsg.textContent = "Sharing stopped.";
+    this.clearPointerIdle();
     this.pointer.classList.remove("on");
+    // Back to the placeholder shape; the next stream sets its own.
+    this.stage.style.removeProperty("aspect-ratio");
     this.shareBtn.disabled = this.mode !== "host";
     this.stopBtn.disabled = true;
     this.dispatchEvent(new CustomEvent("ss-stopped", { bubbles: true, composed: true }));

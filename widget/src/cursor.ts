@@ -26,6 +26,41 @@ export interface Rect {
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 
 /**
+ * The rect a video actually paints inside its element box under
+ * `object-fit: contain`.
+ *
+ * The two diverge whenever the stream's aspect ratio differs from the
+ * element's — the difference is the letterbox (or pillarbox) bars. Mapping
+ * cursor coordinates against the *element* box then places the remote pointer
+ * inside a bar rather than on the content, offset by the bar's size. A 16:10
+ * laptop shared into a 16:9 stage is already enough to see it; a phone in
+ * portrait makes it glaring.
+ *
+ * Falls back to the element box when the intrinsic size is not known yet — no
+ * frames decoded means no bars to correct for, and the answer becomes right on
+ * its own once dimensions arrive.
+ */
+export function contentRect(box: Rect, intrinsicWidth: number, intrinsicHeight: number): Rect {
+  if (
+    !(intrinsicWidth > 0) ||
+    !(intrinsicHeight > 0) ||
+    !(box.width > 0) ||
+    !(box.height > 0)
+  ) {
+    return box;
+  }
+  const scale = Math.min(box.width / intrinsicWidth, box.height / intrinsicHeight);
+  const width = intrinsicWidth * scale;
+  const height = intrinsicHeight * scale;
+  return {
+    left: box.left + (box.width - width) / 2,
+    top: box.top + (box.height - height) / 2,
+    width,
+    height,
+  };
+}
+
+/**
  * Convert a viewport point into 0..1 coordinates within `rect`.
  * Points outside the rect clamp to the edge rather than escaping the range.
  * A zero-sized rect yields {0,0} instead of NaN.

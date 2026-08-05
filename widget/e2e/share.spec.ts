@@ -14,8 +14,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 const room = () => `e2e-${Math.random().toString(36).slice(2, 10)}`;
 
-const url = (r: string, mode: "host" | "viewer", fake = true) =>
-  `/demo/index.html?room=${r}&mode=${mode}${fake ? "&fakeCapture=1" : ""}`;
+const url = (r: string, mode: "host" | "viewer", fake = true, captureSize?: string) =>
+  `/demo/index.html?room=${r}&mode=${mode}${fake ? "&fakeCapture=1" : ""}` +
+  (captureSize ? `&captureSize=${captureSize}` : "");
 
 async function waitForWidget(page: Page): Promise<void> {
   await page.waitForFunction(() => customElements.get("screen-share") !== undefined);
@@ -181,6 +182,167 @@ test("viewer pointer reaches the host over the data channel", async ({ browser }
   }
   // Throttled to 30 Hz: 10 moves over ~600 ms must not produce 10 messages.
   expect(cursors.length).toBeLessThanOrEqual(10);
+
+  await ctx.close();
+});
+
+test("a non-16:9 stream drives the stage and the cursor maps to the picture", async ({
+  browser,
+}) => {
+  const r = room();
+  const ctx = await browser.newContext();
+  const host = await ctx.newPage();
+  const viewer = await ctx.newPage();
+
+  // 4:3 into a stage that starts at 16:9. Before the stage adopted the stream's
+  // ratio this left pillarbox bars, and cursor coordinates were measured
+  // against the element box including those bars.
+  await host.goto(url(r, "host", true, "640x480"));
+  await waitForWidget(host);
+  await viewer.goto(url(r, "viewer", true, "640x480"));
+  await waitForWidget(viewer);
+
+  await host.locator("screen-share").evaluate((el) => {
+    el.shadowRoot!.querySelector<HTMLButtonElement>("button.share")!.click();
+  });
+
+  await expect
+    .poll(
+      async () =>
+        viewer.evaluate(() => {
+          const v = document
+            .querySelector("screen-share")!
+            .shadowRoot!.querySelector<HTMLVideoElement>("video")!;
+          return { w: v.videoWidth, h: v.videoHeight };
+        }),
+      { timeout: 30_000, message: "viewer never received the 4:3 track" },
+    )
+    .toMatchObject({ w: 640, h: 480 });
+
+  // The stage must have taken the stream's shape, leaving no bars for the
+  // pointer to land in.
+  const geom = await viewer.evaluate(() => {
+    const root = document.querySelector("screen-share")!.shadowRoot!;
+    const v = root.querySelector<HTMLVideoElement>("video")!;
+    const box = v.getBoundingClientRect();
+    return { boxW: box.width, boxH: box.height, w: v.videoWidth, h: v.videoHeight };
+  });
+  expect(geom.boxW / geom.boxH).toBeCloseTo(geom.w / geom.h, 1);
+
+  // Point at the exact centre of the painted video; the host must receive
+  // ~0.5,0.5 regardless of the aspect mismatch.
+  const box = await viewer.evaluate(() => {
+    const v = document
+      .querySelector("screen-share")!
+      .shadowRoot!.querySelector<HTMLVideoElement>("video")!;
+    const b = v.getBoundingClientRect();
+    return { x: b.left, y: b.top, w: b.width, h: b.height };
+  });
+  await viewer.bringToFront();
+  for (let i = 0; i < 4; i++) {
+    await viewer.mouse.move(box.x + box.w / 2, box.y + box.h / 2);
+    await viewer.waitForTimeout(80);
+  }
+
+  await expect
+    .poll(
+      () =>
+        host.evaluate(
+          () => (window as unknown as { __ss: { cursors: unknown[] } }).__ss.cursors.length,
+        ),
+      { timeout: 20_000, message: "no cursor messages arrived at the host" },
+    )
+    .toBeGreaterThan(0);
+
+  const last = await host.evaluate(() => {
+    const c = (window as unknown as { __ss: { cursors: { x: number; y: number }[] } }).__ss
+      .cursors;
+    return c[c.length - 1] ?? null;
+  });
+  expect(last, "host recorded no cursor to check").not.toBeNull();
+  expect(last!.x).toBeCloseTo(0.5, 1);
+  expect(last!.y).toBeCloseTo(0.5, 1);
+
+  await ctx.close();
+});
+
+test("a touch tap moves the remote pointer, which then fades on its own", async ({ browser }) => {
+  const r = room();
+  // A phone-shaped viewport with a real touchscreen: pointermove never fires
+  // without a finger down, so a tap is the only way a cursor gets sent.
+  const ctx = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const host = await ctx.newPage();
+  const viewer = await ctx.newPage();
+
+  await host.goto(url(r, "host"));
+  await waitForWidget(host);
+  await viewer.goto(url(r, "viewer"));
+  await waitForWidget(viewer);
+
+  await host.locator("screen-share").evaluate((el) => {
+    el.shadowRoot!.querySelector<HTMLButtonElement>("button.share")!.click();
+  });
+  await expect
+    .poll(
+      () =>
+        viewer.evaluate(
+          () =>
+            document
+              .querySelector("screen-share")!
+              .shadowRoot!.querySelector<HTMLVideoElement>("video")!.videoWidth,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
+
+  const box = await viewer.evaluate(() => {
+    const v = document
+      .querySelector("screen-share")!
+      .shadowRoot!.querySelector<HTMLVideoElement>("video")!;
+    const b = v.getBoundingClientRect();
+    return { x: b.left, y: b.top, w: b.width, h: b.height };
+  });
+  await viewer.bringToFront();
+  await viewer.touchscreen.tap(box.x + box.w / 2, box.y + box.h / 2);
+
+  await expect
+    .poll(
+      () =>
+        host.evaluate(
+          () => (window as unknown as { __ss: { cursors: unknown[] } }).__ss.cursors.length,
+        ),
+      { timeout: 20_000, message: "a tap sent no cursor message" },
+    )
+    .toBeGreaterThan(0);
+
+  // The dot is up now...
+  await expect
+    .poll(
+      () =>
+        host.evaluate(() =>
+          document
+            .querySelector("screen-share")!
+            .shadowRoot!.querySelector(".pointer")!
+            .classList.contains("on"),
+        ),
+      { timeout: 5_000, message: "the remote pointer never appeared" },
+    )
+    .toBe(true);
+
+  // ...and must retire itself. A finger sends no pointerleave, so without the
+  // idle timeout it would hang at the tap position for the whole session.
+  await expect
+    .poll(
+      () =>
+        host.evaluate(() =>
+          document
+            .querySelector("screen-share")!
+            .shadowRoot!.querySelector(".pointer")!
+            .classList.contains("on"),
+        ),
+      { timeout: 10_000, message: "the remote pointer never faded after the touch ended" },
+    )
+    .toBe(false);
 
   await ctx.close();
 });
