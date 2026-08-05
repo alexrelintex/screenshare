@@ -16,3 +16,5 @@ playwright-report/
 # versions and are what make a build reproducible. Commit them.
 
 .DS_Store
+
+.DS_Store
