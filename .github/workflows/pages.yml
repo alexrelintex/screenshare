@@ -27,7 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      # Whichever attempt got there; the first is empty when it timed out.
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.0.0
@@ -71,11 +72,21 @@ jobs:
       - uses: actions/configure-pages@v6.0.0
       - uses: actions/upload-pages-artifact@v5.0.0
         with: { path: _site }
+      # The 10-minute wait is GitHub's deployment queue, not anything this
+      # workflow controls, and the action caps `timeout` at 600000 — raising it
+      # is silently clamped back, so waiting longer is not an option available
+      # to us. One retry is: a queue that is backed up now is usually moving
+      # again minutes later, and a stalled deploy leaves the site untouched, so
+      # a second attempt is safe rather than merely convenient.
       - id: deployment
         uses: actions/deploy-pages@v5.0.0
-        with:
-          # The action's 10-minute default is time spent waiting on GitHub's own
-          # deployment queue, not on anything this workflow does. A queue stall
-          # once turned a perfectly good build into a red run; 20 minutes makes
-          # a failure here mean something is actually wrong.
-          timeout: 1200000
+        continue-on-error: true
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v5.0.0
+
+      - name: report deploy outcome
+        run: |
+          if [ "${{ steps.deployment.outcome }}" = "failure" ]; then
+            echo "::warning::First deploy attempt timed out on GitHub's queue; the retry succeeded."
+          fi
