@@ -25,6 +25,13 @@ check "static server refuses path traversal"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$STATIC/../../../etc/passwd")
 [ "$code" = "403" ] || [ "$code" = "404" ] || { echo "FAIL (got $code)"; exit 1; }; pass
 
+check "POST $SIGNALING/rooms mints a pair"
+room=$(curl -fsS -X POST "$SIGNALING/rooms" | sed -n 's/.*"room":"\([^"]*\)".*/\1/p')
+[ -n "$room" ] || { echo "FAIL (no room in response)"; exit 1; }
+# Both halves must name the same room, or the pair does not connect.
+curl -fsS -X POST "$SIGNALING/rooms" | grep -q '"viewer"' || { echo "FAIL (no viewer link)"; exit 1; }
+pass
+
 check "WebSocket upgrade accepted on /ws/{room}"
 WS_HOST=${SIGNALING#http://}; WS_HOST=${WS_HOST#https://}
 out=$(curl -si --max-time 5 \

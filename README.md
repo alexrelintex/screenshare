@@ -74,6 +74,55 @@ ripple is drawn inside the widget and the host's operating system never hears ab
 
 ---
 
+## Provisioning sessions from a CRM
+
+`POST /rooms` mints a fresh room and returns a matched pair of links plus
+ready-to-paste embed snippets. No body, no auth.
+
+```bash
+curl -X POST https://sig.example.com/rooms
+```
+
+```json
+{
+  "room": "L15lGVkwSZ3y",
+  "signaling": "https://sig.example.com",
+  "host":   { "url": "https://app.example.com/demo/index.html?room=…&mode=host",   "embed": "<script …>" },
+  "viewer": { "url": "https://app.example.com/demo/index.html?room=…&mode=viewer", "embed": "<script …>" }
+}
+```
+
+Drop `viewer.embed` into a CRM record page and send `host.url` to the customer —
+or the reverse, depending on who is sharing:
+
+```html
+<script src="https://app.example.com/dist/screenshare.js" async></script>
+<screen-share room="L15lGVkwSZ3y" signaling="https://sig.example.com" mode="viewer"></screen-share>
+```
+
+Configure the two bases, or the links point back at the signaling service, which
+serves no page:
+
+| Variable | Meaning |
+|---|---|
+| `APP_BASE_URL` | Where `demo/index.html` and `dist/screenshare.js` are served |
+| `SIGNALING_PUBLIC_URL` | This service's own public URL |
+
+Unset, both fall back to the incoming request URL — fine locally, unreliable
+behind a proxy. Neither is accepted from the caller: an endpoint that let a
+client name its own base would hand out links that look like yours and point
+somewhere else.
+
+**Nothing is allocated.** A room exists only while peers are connected, so this
+returns a name for a room that does not exist yet. That is what keeps an
+unauthenticated endpoint cheap — unused ids cost nothing — but it also means the
+endpoint is not a reservation: two callers cannot be handed the same room, yet
+nothing stops a third party who learns an id from joining before your customer
+does. Ids are `secrets.token_urlsafe` (~72 bits) precisely because, with no auth,
+**the room id is the only secret**. Treat one like a password: send it over a
+channel you trust, and put auth in front of this endpoint before exposing it
+broadly.
+
 ## Run it locally
 
 One command. No Docker, no ports to pick, no directory to be in — the script finds the repo

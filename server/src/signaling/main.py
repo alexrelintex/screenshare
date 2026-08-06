@@ -15,12 +15,15 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
+from .links import embed_snippet, new_room_id, page_url
 from .rooms import RoomFull, RoomRegistry
 
 # Only these are forwarded. Anything else is rejected rather than relayed,
@@ -33,10 +36,12 @@ app = FastAPI(title="screenshare-signaling", version="0.1.0")
 
 # The widget is embedded on third-party pages by design, so the signaling
 # endpoint must be reachable cross-origin. Narrow this in your deployment.
+# POST is here for /rooms: a CRM calling it from the browser sends a preflight
+# first, and a GET-only policy fails that before the request is ever made.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -47,6 +52,52 @@ _sockets: dict[str, WebSocket] = {}
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
     return {"status": "ok", "rooms": len(registry)}
+
+
+class RoleLinks(BaseModel):
+    """Everything needed to put one end of a session somewhere."""
+
+    url: str
+    embed: str
+
+
+class RoomResponse(BaseModel):
+    room: str
+    signaling: str
+    host: RoleLinks
+    viewer: RoleLinks
+
+
+@app.post("/rooms", status_code=201, response_model=RoomResponse)
+def create_room(request: Request) -> RoomResponse:
+    """Mint a room and return a matched pair of links and embed snippets.
+
+    Nothing is allocated here. Rooms come into existence when a peer connects
+    and disappear when the last one leaves, so this endpoint hands out a name
+    for a room that does not exist yet — which is what keeps it cheap enough to
+    leave unauthenticated, and why an unused id costs nothing.
+
+    Both bases prefer explicit configuration. `request.base_url` behind a proxy
+    reports whatever the proxy forwarded, so it is a fallback for local runs
+    rather than something to depend on in a deployment.
+    """
+    fallback = str(request.base_url)
+    app_base = os.environ.get("APP_BASE_URL") or fallback
+    signaling_base = os.environ.get("SIGNALING_PUBLIC_URL") or fallback
+    room = new_room_id()
+
+    return RoomResponse(
+        room=room,
+        signaling=signaling_base.rstrip("/"),
+        host=RoleLinks(
+            url=page_url(app_base, room, "host", signaling_base),
+            embed=embed_snippet(app_base, room, "host", signaling_base),
+        ),
+        viewer=RoleLinks(
+            url=page_url(app_base, room, "viewer", signaling_base),
+            embed=embed_snippet(app_base, room, "viewer", signaling_base),
+        ),
+    )
 
 
 async def _send(peer_id: str, payload: dict[str, Any]) -> None:

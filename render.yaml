@@ -16,6 +16,14 @@ services:
     dockerContext: ./server
     healthCheckPath: /healthz
     autoDeploy: true
+    # POST /rooms builds links from these. Unset, it falls back to the request
+    # URL — which is this service, not the page — so the links it hands out
+    # would point at a host that serves no demo page.
+    envVars:
+      - key: APP_BASE_URL
+        value: https://alexrelintex.github.io/screenshare
+      - key: SIGNALING_PUBLIC_URL
+        value: https://screenshare-signaling.onrender.com
     # Free instances sleep after ~15 minutes idle and cold-start on the next
     # request, so the first visitor after a quiet spell waits. Everything is
     # in-memory, so a sleep also drops every room — which is harmless here,
