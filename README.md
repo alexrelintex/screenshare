@@ -111,6 +111,8 @@ no permissions and works in any iframe.
 
 📖 **[Full API reference →](docs/API.md)** — endpoints, room-id semantics and
 lifetime, embedding steps, and the iframe rules in detail.
+📮 **[Postman collection →](docs/screenshare.postman_collection.json)** — import
+and run; also works headless via `npx newman run`.
 
 ## Run it locally
 

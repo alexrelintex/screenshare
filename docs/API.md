@@ -6,6 +6,12 @@ and relay handshake messages between two peers. It never sees a video frame.
 Base URL below is written as `https://sig.example.com`. Interactive docs are
 served at `/docs` (OpenAPI schema at `/openapi.json`).
 
+📮 **[Postman collection](screenshare.postman_collection.json)** — import it and
+run "Mint a room" first; it stores the room id so the other requests need
+nothing pasted by hand. Point `baseUrl` at `http://127.0.0.1:8000` to work
+against a local `make up`. It also runs headless:
+`npx newman run docs/screenshare.postman_collection.json`.
+
 | | |
 |---|---|
 | [`POST /rooms`](#post-rooms) | Mint a room, get links and embed code |
