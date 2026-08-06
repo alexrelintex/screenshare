@@ -106,6 +106,14 @@ jobs:
           set -uo pipefail
           gh api "repos/${{ github.repository }}/deployments?environment=github-pages&per_page=10" \
             --jq '.[] | "\(.id) \(.sha)"' | while read -r id sha; do
+              # Never touch this run's own deployment. Declaring
+              # `environment: github-pages` makes GitHub open a deployment record
+              # in_progress the moment the job starts, so an unqualified sweep
+              # cancels the deploy it is about to perform and then waits ten
+              # minutes on something it killed itself.
+              if [ "$sha" = "${{ github.sha }}" ]; then
+                continue
+              fi
               state=$(gh api "repos/${{ github.repository }}/deployments/$id/statuses" \
                         --jq '.[0].state // "none"' 2>/dev/null || echo none)
               case "$state" in
