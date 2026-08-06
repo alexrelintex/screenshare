@@ -343,6 +343,12 @@ export class ScreenShareElement extends HTMLElement {
     const canCapture = this.captureSupported();
     this.shareBtn.textContent = host ? "Share screen" : "Waiting for host";
     this.shareBtn.disabled = !host || !canCapture;
+    // A viewer can start nothing and stop nothing — the share belongs to the
+    // other end. Both controls were permanently disabled there, which is a
+    // status message wearing a button's clothes, and the state readout beside
+    // them already says the same thing.
+    this.shareBtn.hidden = !host;
+    this.stopBtn.hidden = !host;
     this.emptyMsg.textContent = host
       ? canCapture
         ? "Click “Share screen” to start."

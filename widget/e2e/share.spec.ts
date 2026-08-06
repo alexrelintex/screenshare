@@ -17,8 +17,15 @@ const room = () => `e2e-${Math.random().toString(36).slice(2, 10)}`;
 // Every page the suite opens is a dev page. The window.__ss event log these
 // tests assert against, and the hostile CSS one of them requires, exist only
 // under ?dev=1 — a real session gets neither.
+//
+// The signaling URL is carried explicitly rather than left to the page's
+// default, so the suite follows SIGNALING_PORT instead of silently talking to
+// whatever happens to be on 8000.
+const SIGNALING = `http://127.0.0.1:${process.env.SIGNALING_PORT ?? "8000"}`;
+const base = (r: string) =>
+  `/demo/index.html?dev=1&room=${r}&signaling=${encodeURIComponent(SIGNALING)}`;
 const url = (r: string, mode: "host" | "viewer", fake = true, captureSize?: string) =>
-  `/demo/index.html?dev=1&room=${r}&mode=${mode}${fake ? "&fakeCapture=1" : ""}` +
+  `${base(r)}&mode=${mode}${fake ? "&fakeCapture=1" : ""}` +
   (captureSize ? `&captureSize=${captureSize}` : "");
 
 async function waitForWidget(page: Page): Promise<void> {
@@ -454,7 +461,7 @@ test("a link with no mode picks the role the device can perform", async ({ brows
       configurable: true,
     });
   });
-  await phone.goto(`/demo/index.html?dev=1&room=${r}`);
+  await phone.goto(base(r));
   await waitForWidget(phone);
   expect(
     await phone.locator("screen-share").getAttribute("mode"),
@@ -470,7 +477,7 @@ test("a link with no mode picks the role the device can perform", async ({ brows
       configurable: true,
     });
   });
-  await desk.goto(`/demo/index.html?dev=1&room=${r}`);
+  await desk.goto(base(r));
   await waitForWidget(desk);
   expect(
     await desk.locator("screen-share").getAttribute("mode"),
@@ -478,7 +485,7 @@ test("a link with no mode picks the role the device can perform", async ({ brows
   ).toBe("host");
 
   // An explicit mode still overrides the detection in both directions.
-  await desk.goto(`/demo/index.html?dev=1&room=${room()}&mode=viewer`);
+  await desk.goto(`${base(room())}&mode=viewer`);
   await waitForWidget(desk);
   expect(await desk.locator("screen-share").getAttribute("mode")).toBe("viewer");
 
@@ -593,7 +600,7 @@ test("?fullscreen=1 waits for a gesture, then fills the screen", async ({ browse
     // @ts-expect-error prefixed spelling is not in the typings
     delete Element.prototype.webkitRequestFullscreen;
   });
-  await page.goto(`/demo/index.html?dev=1&room=${room()}&mode=viewer&fullscreen=1`);
+  await page.goto(`${base(room())}&mode=viewer&fullscreen=1`);
   await waitForWidget(page);
 
   expect(await page.locator("screen-share").getAttribute("fullscreen")).not.toBeNull();
@@ -638,6 +645,35 @@ test("?fullscreen=1 waits for a gesture, then fills the screen", async ({ browse
       document.querySelector("screen-share")!.shadowRoot!.querySelector("button.full")!.textContent,
   );
   expect(label).toBe("Full screen");
+
+  await ctx.close();
+});
+
+test("a viewer's footer carries only the controls it can use", async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(url(room(), "viewer"));
+  await waitForWidget(page);
+
+  const bar = await page.evaluate(() =>
+    [
+      ...document.querySelector("screen-share")!.shadowRoot!.querySelectorAll<HTMLButtonElement>(
+        ".bar button",
+      ),
+    ]
+      .filter((b) => !b.hidden)
+      .map((b) => b.textContent?.trim()),
+  );
+  // Share and Stop belong to whoever is sharing; a viewer could only ever see
+  // them disabled, which says nothing the state readout does not.
+  expect(bar).toEqual(["Full screen"]);
+
+  const stateVisible = await page.evaluate(
+    () =>
+      !!document.querySelector("screen-share")!.shadowRoot!.querySelector(".state")!.textContent
+        ?.length,
+  );
+  expect(stateVisible, "the connection state must survive the cleanup").toBe(true);
 
   await ctx.close();
 });

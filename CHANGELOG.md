@@ -53,6 +53,9 @@ real Chromium pages through a live peer connection. `make ci` is the gate.
 
 ### Changed in this release
 
+- A viewer's footer carries only `Full screen` and the connection state. `Share
+  screen` and `Stop` belong to whoever is sharing, and a viewer could only ever
+  see them disabled — a status message wearing a button's clothes.
 - The page shows the video, `Share screen` / `Stop`, and the connection state —
   nothing else. The headings, role links, copy button, hostile CSS fixture, the
   `window.__ss` debug log and the synthetic-capture hook all moved behind

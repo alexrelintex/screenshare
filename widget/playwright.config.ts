@@ -1,7 +1,12 @@
 import { defineConfig } from "@playwright/test";
 
-const SIGNALING = "http://127.0.0.1:8000";
-const STATIC = "http://127.0.0.1:5173";
+// Ports come from the environment, same convention as .env / the Makefile.
+// Hardcoding them meant any other process holding 8000 — another project's API
+// is enough — made the whole suite unrunnable locally with no way round it.
+const SIGNALING_PORT = process.env.SIGNALING_PORT ?? "8000";
+const STATIC_PORT = process.env.STATIC_PORT ?? "5173";
+const SIGNALING = `http://127.0.0.1:${SIGNALING_PORT}`;
+const STATIC = `http://127.0.0.1:${STATIC_PORT}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -36,7 +41,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "../server/.venv/bin/uvicorn signaling.main:app --host 127.0.0.1 --port 8000 " +
+        `../server/.venv/bin/uvicorn signaling.main:app --host 127.0.0.1 --port ${SIGNALING_PORT} ` +
         "--app-dir ../server/src --log-level warning",
       url: `${SIGNALING}/healthz`,
       reuseExistingServer: true,
@@ -44,6 +49,9 @@ export default defineConfig({
     },
     {
       command: "node serve.mjs",
+      // serve.mjs reads PORT; without this it binds the default while
+      // Playwright waits on STATIC_PORT and the suite times out on startup.
+      env: { PORT: STATIC_PORT },
       url: `${STATIC}/demo/index.html`,
       reuseExistingServer: true,
       timeout: 30_000,
