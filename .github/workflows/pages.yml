@@ -73,3 +73,9 @@ jobs:
         with: { path: _site }
       - id: deployment
         uses: actions/deploy-pages@v5.0.0
+        with:
+          # The action's 10-minute default is time spent waiting on GitHub's own
+          # deployment queue, not on anything this workflow does. A queue stall
+          # once turned a perfectly good build into a red run; 20 minutes makes
+          # a failure here mean something is actually wrong.
+          timeout: 1200000
