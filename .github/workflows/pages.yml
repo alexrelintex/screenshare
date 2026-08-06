@@ -15,6 +15,8 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # To delete the artifacts a previous attempt of this same run left behind.
+  actions: write
 
 # Never cancel a run mid-publish — a half-deployed site is worse than a stale
 # one. A newer push simply queues behind the one in flight.
@@ -68,6 +70,26 @@ jobs:
           <meta http-equiv="refresh" content="0; url=./demo/index.html">
           <p><a href="./demo/index.html">screen-share demo</a></p>
           HTML
+
+      # Re-running this workflow is the obvious thing to do when a deploy fails,
+      # and it breaks the next attempt: every attempt uploads another artifact
+      # named github-pages, they all persist under the same run id, and
+      # deploy-pages refuses when it finds more than one —
+      #   Error: Multiple artifacts named "github-pages" were unexpectedly found
+      #   for this workflow run. Artifact count is 3.
+      # Clearing the old ones first makes "Re-run jobs" work like people expect.
+      - name: clear artifacts from earlier attempts of this run
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ids=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+                  --jq '.artifacts[] | select(.name == "github-pages") | .id')
+          for id in $ids; do
+            echo "deleting stale github-pages artifact $id"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+          done
 
       - uses: actions/configure-pages@v6.0.0
       - uses: actions/upload-pages-artifact@v5.0.0
