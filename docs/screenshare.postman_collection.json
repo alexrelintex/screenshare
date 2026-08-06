@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "2b830c97-5967-4adb-ab0e-0432c32e2639",
-    "name": "screen-share signaling",
-    "description": "Provision and inspect 1:1 screen-sharing sessions.\n\n**Run \"Mint a room\" first.** It stores `roomId`, `hostUrl` and `viewerUrl` as collection variables, and the other requests use them — so the collection runs top to bottom with nothing to paste by hand.\n\n### Variables\n\n- `baseUrl` — the signaling service. Defaults to the hosted deployment; set it to `http://127.0.0.1:8000` to work against `make up`.\n- `roomId`, `hostUrl`, `viewerUrl` — filled in by \"Mint a room\".\n\n### Two things that surprise people\n\n**A room id is not a reservation.** Nothing is allocated server-side; rooms exist only while peers are connected. An id names a room that does not exist yet, which is why `GET /rooms/{id}` answers `peers: 0` rather than 404, and why nothing stops someone else taking the second seat if the id leaks.\n\n**The first request may take ~50 s.** The hosted service is on a free tier that sleeps after ~15 minutes idle. That is a cold start, not a timeout — the second request is immediate.\n\nFull reference: https://github.com/alexrelintex/screenshare/blob/main/docs/API.md",
+    "name": "screen-share signaling v1.0.0",
+    "description": "Provision and inspect 1:1 screen-sharing sessions.\n\n**Run \"Mint a room\" first.** It stores `roomId`, `hostUrl` and `viewerUrl` as collection variables, and the other requests use them \u2014 so the collection runs top to bottom with nothing to paste by hand.\n\n### Variables\n\n- `baseUrl` \u2014 the signaling service. Defaults to the hosted deployment; set it to `http://127.0.0.1:8000` to work against `make up`.\n- `roomId`, `hostUrl`, `viewerUrl` \u2014 filled in by \"Mint a room\".\n\n### Two things that surprise people\n\n**A room id is not a reservation.** Nothing is allocated server-side; rooms exist only while peers are connected. An id names a room that does not exist yet, which is why `GET /rooms/{id}` answers `peers: 0` rather than 404, and why nothing stops someone else taking the second seat if the id leaks.\n\n**The first request may take ~50 s.** The hosted service is on a free tier that sleeps after ~15 minutes idle. That is a cold start, not a timeout \u2014 the second request is immediate.\n\nEvery request carries a saved example response captured from the running service, so the shapes are visible without sending anything.\n\nFull reference: https://github.com/alexrelintex/screenshare/blob/main/docs/API.md",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,9 +11,21 @@
       "value": "https://screenshare-signaling.onrender.com",
       "type": "string"
     },
-    { "key": "roomId", "value": "", "type": "string" },
-    { "key": "hostUrl", "value": "", "type": "string" },
-    { "key": "viewerUrl", "value": "", "type": "string" }
+    {
+      "key": "roomId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "hostUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "viewerUrl",
+      "value": "",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -23,12 +35,44 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/rooms",
-          "host": ["{{baseUrl}}"],
-          "path": ["rooms"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "rooms"
+          ]
         },
         "description": "Create a session: returns a room id, links for both roles, and paste-ready embed snippets.\n\nNo request body and no authentication. Links are built from the service's `APP_BASE_URL` and `SIGNALING_PUBLIC_URL`; they are never taken from the caller, so this cannot be used to mint links pointing somewhere else."
       },
-      "response": [],
+      "response": [
+        {
+          "name": "201 Created",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rooms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            }
+          },
+          "status": "Created",
+          "code": 201,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"room\": \"2PdE5AUzW5NV\",\n  \"signaling\": \"https://screenshare-signaling.onrender.com\",\n  \"host\": {\n    \"url\": \"https://alexrelintex.github.io/screenshare/demo/index.html?room=2PdE5AUzW5NV&mode=host&signaling=https%3A%2F%2Fscreenshare-signaling.onrender.com\",\n    \"embed\": \"<script src=\\\"https://alexrelintex.github.io/screenshare/dist/screenshare.js\\\" async></script>\\n<screen-share room=\\\"2PdE5AUzW5NV\\\" signaling=\\\"https://screenshare-signaling.onrender.com\\\" mode=\\\"host\\\"></screen-share>\"\n  },\n  \"viewer\": {\n    \"url\": \"https://alexrelintex.github.io/screenshare/demo/index.html?room=2PdE5AUzW5NV&mode=viewer&signaling=https%3A%2F%2Fscreenshare-signaling.onrender.com\",\n    \"embed\": \"<script src=\\\"https://alexrelintex.github.io/screenshare/dist/screenshare.js\\\" async></script>\\n<screen-share room=\\\"2PdE5AUzW5NV\\\" signaling=\\\"https://screenshare-signaling.onrender.com\\\" mode=\\\"viewer\\\"></screen-share>\"\n  }\n}"
+        }
+      ],
       "event": [
         {
           "listen": "test",
@@ -60,8 +104,8 @@
               "  pm.expect(body.viewer.url).to.include(\"mode=viewer\");",
               "});",
               "",
-              "// A page served over https cannot open a ws:// socket — the browser blocks it",
-              "// as mixed content — so an http signaling URL is a broken deployment.",
+              "// A page served over https cannot open a ws:// socket \u2014 the browser blocks it",
+              "// as mixed content \u2014 so an http signaling URL is a broken deployment.",
               "pm.test(\"signaling is https\", () => {",
               "  pm.expect(body.signaling).to.match(/^https:\\/\\//);",
               "});",
@@ -84,12 +128,46 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/rooms/{{roomId}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["rooms", "{{roomId}}"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "rooms",
+            "{{roomId}}"
+          ]
         },
-        "description": "How many peers are connected right now — the query behind a \"waiting for customer…\" indicator.\n\nRun \"Mint a room\" first to populate `roomId`. Expect `peers: 0` until someone opens a link; open `viewerUrl` in a browser and run this again to watch it go to 1."
+        "description": "How many peers are connected right now \u2014 the query behind a \"waiting for customer\u2026\" indicator.\n\nRun \"Mint a room\" first to populate `roomId`. Expect `peers: 0` until someone opens a link; open `viewerUrl` in a browser and run this again to watch it go to 1."
       },
-      "response": [],
+      "response": [
+        {
+          "name": "200 OK \u2014 nobody has joined yet",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"room\": \"2PdE5AUzW5NV\",\n  \"peers\": 0,\n  \"capacity\": 2,\n  \"occupied\": false,\n  \"full\": false\n}"
+        }
+      ],
       "event": [
         {
           "listen": "prerequest",
@@ -97,7 +175,7 @@
             "type": "text/javascript",
             "exec": [
               "if (!pm.collectionVariables.get(\"roomId\")) {",
-              "  throw new Error(\"roomId is empty — run 'Mint a room' first.\");",
+              "  throw new Error(\"roomId is empty \u2014 run 'Mint a room' first.\");",
               "}"
             ]
           }
@@ -132,18 +210,52 @@
       ]
     },
     {
-      "name": "Room status — id never used",
+      "name": "Room status \u2014 id never used",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/rooms/never-been-used",
-          "host": ["{{baseUrl}}"],
-          "path": ["rooms", "never-been-used"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "rooms",
+            "never-been-used"
+          ]
         },
-        "description": "Deliberately asks about an id nobody has ever joined, to show the endpoint answers **200 with `peers: 0`, not 404**.\n\nRooms are created by the first peer and destroyed by the last, so a link that has been sent but not yet opened is the normal case — 404 would report the expected path as an error. Absent and empty are the same state here, which also means this cannot tell \"never opened\" from \"call finished\"."
+        "description": "Deliberately asks about an id nobody has ever joined, to show the endpoint answers **200 with `peers: 0`, not 404**.\n\nRooms are created by the first peer and destroyed by the last, so a link that has been sent but not yet opened is the normal case \u2014 404 would report the expected path as an error. Absent and empty are the same state here, which also means this cannot tell \"never opened\" from \"call finished\"."
       },
-      "response": [],
+      "response": [
+        {
+          "name": "200 OK \u2014 not 404",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/never-been-used",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "never-been-used"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"room\": \"never-been-used\",\n  \"peers\": 0,\n  \"capacity\": 2,\n  \"occupied\": false,\n  \"full\": false\n}"
+        }
+      ],
       "event": [
         {
           "listen": "test",
@@ -169,12 +281,44 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/healthz",
-          "host": ["{{baseUrl}}"],
-          "path": ["healthz"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "healthz"
+          ]
         },
-        "description": "Liveness, plus how many rooms currently hold at least one peer — the load the process is carrying, not a total ever created.\n\nUsed as the container health check and by the hosting platform. Also the cheapest way to wake a sleeping free-tier instance before a demo."
+        "description": "Liveness, plus how many rooms currently hold at least one peer \u2014 the load the process is carrying, not a total ever created.\n\nUsed as the container health check and by the hosting platform. Also the cheapest way to wake a sleeping free-tier instance before a demo."
       },
-      "response": [],
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"status\": \"ok\",\n  \"rooms\": 0\n}"
+        }
+      ],
       "event": [
         {
           "listen": "test",
