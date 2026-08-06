@@ -85,8 +85,21 @@ jobs:
         if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5.0.0
 
+      # always(), or this is skipped in exactly the case it exists to describe:
+      # a step after a failed one does not run by default.
       - name: report deploy outcome
+        if: always()
         run: |
-          if [ "${{ steps.deployment.outcome }}" = "failure" ]; then
-            echo "::warning::First deploy attempt timed out on GitHub's queue; the retry succeeded."
+          first='${{ steps.deployment.outcome }}'
+          retry='${{ steps.deployment_retry.outcome }}'
+          if [ "$first" = "success" ]; then
+            echo "Deployed on the first attempt."
+          elif [ "$retry" = "success" ]; then
+            echo "::warning::First attempt timed out on GitHub's deployment queue; the retry succeeded."
+          else
+            echo "::error::Both deploy attempts timed out on GitHub's deployment queue."
+            echo "The build and artifact are fine — a timed-out deploy is cancelled without"
+            echo "publishing, so the live site still serves the last successful deploy."
+            echo "Re-run this workflow once the queue is moving."
+            exit 1
           fi
