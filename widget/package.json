@@ -1,12 +1,14 @@
 {
   "name": "@screenshare/widget",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Embeddable 1:1 WebRTC screen sharing custom element with remote cursor",
   "license": "MIT",
   "type": "module",
   "main": "dist/screenshare.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "node build.mjs",
     "lint": "tsc --noEmit",

@@ -14,8 +14,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 const room = () => `e2e-${Math.random().toString(36).slice(2, 10)}`;
 
+// Every page the suite opens is a dev page. The window.__ss event log these
+// tests assert against, and the hostile CSS one of them requires, exist only
+// under ?dev=1 — a real session gets neither.
 const url = (r: string, mode: "host" | "viewer", fake = true, captureSize?: string) =>
-  `/demo/index.html?room=${r}&mode=${mode}${fake ? "&fakeCapture=1" : ""}` +
+  `/demo/index.html?dev=1&room=${r}&mode=${mode}${fake ? "&fakeCapture=1" : ""}` +
   (captureSize ? `&captureSize=${captureSize}` : "");
 
 async function waitForWidget(page: Page): Promise<void> {
@@ -451,7 +454,7 @@ test("a link with no mode picks the role the device can perform", async ({ brows
       configurable: true,
     });
   });
-  await phone.goto(`/demo/index.html?room=${r}`);
+  await phone.goto(`/demo/index.html?dev=1&room=${r}`);
   await waitForWidget(phone);
   expect(
     await phone.locator("screen-share").getAttribute("mode"),
@@ -467,7 +470,7 @@ test("a link with no mode picks the role the device can perform", async ({ brows
       configurable: true,
     });
   });
-  await desk.goto(`/demo/index.html?room=${r}`);
+  await desk.goto(`/demo/index.html?dev=1&room=${r}`);
   await waitForWidget(desk);
   expect(
     await desk.locator("screen-share").getAttribute("mode"),
@@ -475,7 +478,7 @@ test("a link with no mode picks the role the device can perform", async ({ brows
   ).toBe("host");
 
   // An explicit mode still overrides the detection in both directions.
-  await desk.goto(`/demo/index.html?room=${room()}&mode=viewer`);
+  await desk.goto(`/demo/index.html?dev=1&room=${room()}&mode=viewer`);
   await waitForWidget(desk);
   expect(await desk.locator("screen-share").getAttribute("mode")).toBe("viewer");
 
@@ -590,7 +593,7 @@ test("?fullscreen=1 waits for a gesture, then fills the screen", async ({ browse
     // @ts-expect-error prefixed spelling is not in the typings
     delete Element.prototype.webkitRequestFullscreen;
   });
-  await page.goto(`/demo/index.html?room=${room()}&mode=viewer&fullscreen=1`);
+  await page.goto(`/demo/index.html?dev=1&room=${room()}&mode=viewer&fullscreen=1`);
   await waitForWidget(page);
 
   expect(await page.locator("screen-share").getAttribute("fullscreen")).not.toBeNull();

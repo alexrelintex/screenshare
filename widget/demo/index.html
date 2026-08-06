@@ -3,43 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>screen-share demo</title>
+<meta name="color-scheme" content="dark">
+<title>Screen share</title>
 <style>
-  /* Deliberately hostile host-page CSS. If the widget's shadow DOM works,
-     none of this reaches inside it. */
-  * { box-sizing: content-box; }
-  body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 32px;
-         background: #f4f4f6; color: #222; }
-  video { width: 40px !important; border: 6px dashed red; }
-  button { background: hotpink !important; font-size: 28px !important; }
-  main { max-width: 860px; margin: 0 auto; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  p.sub { margin: 0 0 20px; color: #666; font-size: 14px; }
-  .links a { margin-right: 14px; font-size: 14px; }
-  code { background: #e6e6ea; padding: 1px 5px; border-radius: 4px; }
+  /* The page is a frame for the widget and nothing else: the video, the two
+     controls and the connection state are the whole interface. Everything the
+     old demo page carried — headings, role links, a copy button — was
+     scaffolding for testing it, and now lives behind ?dev=1. */
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: #0b0b0e;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #mount { width: 100%; max-width: 1100px; }
+
+  /* Dev mode restores the page chrome and the hostile CSS the isolation test
+     needs. Scoped under .dev so none of it can reach a real session. */
+  body.dev {
+    display: block;
+    padding: 32px;
+    background: #f4f4f6;
+    color: #222;
+  }
+  body.dev * { box-sizing: content-box; }
+  body.dev video { width: 40px !important; border: 6px dashed red; }
+  body.dev button { background: hotpink !important; font-size: 28px !important; }
+  body.dev #mount { margin: 0 auto; }
+  body.dev header { max-width: 1100px; margin: 0 auto 16px; }
+  body.dev h1 { font-size: 20px; margin: 0 0 4px; }
+  body.dev p.sub { margin: 0 0 12px; color: #666; font-size: 14px; }
+  body.dev .links a { margin-right: 14px; font-size: 14px; }
+  body.dev code { background: #e6e6ea; padding: 1px 5px; border-radius: 4px; }
 </style>
 </head>
 <body>
-<main>
-  <h1>screen-share &mdash; <span id="role"></span></h1>
-  <p class="sub">
-    Room <code id="roomLabel"></code>. This page applies deliberately hostile CSS
-    (<code>video { width: 40px }</code>, pink 28px buttons) to prove the widget's
-    shadow DOM isolates it.
-  </p>
-  <div class="links">
-    <a id="hostLink" href="#">open host</a>
-    <a id="viewerLink" href="#">open viewer</a>
-    <button id="copyLink" type="button"></button>
-  </div>
-  <p></p>
-  <div id="mount"></div>
-</main>
+<div id="mount"></div>
 
 <script src="./config.js"></script>
 <script src="../dist/screenshare.js"></script>
 <script>
   const qs = new URLSearchParams(location.search);
+
+  // Everything that exists to test the widget rather than to use it.
+  const DEV = qs.get("dev") === "1";
 
   // A fresh room when none was supplied. Rooms hold exactly two peers, so a
   // fixed default means two independent visitors collide and the second pair
@@ -61,7 +72,7 @@
   // capability, so defaulting a phone to host hands it a button that cannot
   // work; picking the role here means one link serves both ends of a session —
   // the laptop that opens it hosts, the phone that scans it views.
-  // An explicit ?mode= always wins, so the copy/open links keep working.
+  // An explicit ?mode= always wins.
   const explicitMode = qs.get("mode");
   const canCapture = typeof navigator.mediaDevices?.getDisplayMedia === "function";
   const mode =
@@ -76,42 +87,62 @@
   // the browser blocks a ws:// connection from a secure page as mixed content.
   const signaling = qs.get("signaling") || window.SS_SIGNALING || "http://127.0.0.1:8000";
 
-  // Carry every existing param across. Building these as `?room=..&mode=..`
-  // silently dropped `signaling`, so switching roles from the page lost a
-  // non-default signaling port and the widget failed to connect.
-  const linkFor = (m) => {
-    const p = new URLSearchParams(qs);
-    p.set("mode", m);
-    return `${location.pathname}?${p}`;
-  };
+  const mount = document.getElementById("mount");
 
-  document.getElementById("role").textContent = mode;
-  document.getElementById("roomLabel").textContent = room;
-  document.getElementById("hostLink").href = linkFor("host");
-  document.getElementById("viewerLink").href = linkFor("viewer");
+  if (DEV) {
+    document.body.classList.add("dev");
 
-  const copyBtn = document.getElementById("copyLink");
-  copyBtn.addEventListener("click", async () => {
-    const url = new URL(linkFor(mode === "host" ? "viewer" : "host"), location.href).href;
-    try {
-      await navigator.clipboard.writeText(url);
-      copyBtn.textContent = "copied";
-    } catch {
-      copyBtn.textContent = url; // clipboard blocked — show it to select manually
-    }
-    setTimeout(() => (copyBtn.textContent = LABEL), 2000);
-  });
-  const LABEL = mode === "host" ? "copy viewer link" : "copy host link";
-  copyBtn.textContent = LABEL;
+    // Carry every existing param across. Building these as `?room=..&mode=..`
+    // silently dropped `signaling`, so switching roles from the page lost a
+    // non-default signaling port and the widget failed to connect.
+    const linkFor = (m) => {
+      const p = new URLSearchParams(qs);
+      p.set("mode", m);
+      return `${location.pathname}?${p}`;
+    };
+
+    const header = document.createElement("header");
+    header.innerHTML = `
+      <h1>screen-share &mdash; ${mode}</h1>
+      <p class="sub">
+        Room <code>${room}</code>. This page applies deliberately hostile CSS
+        (<code>video { width: 40px }</code>, pink 28px buttons) to prove the
+        widget's shadow DOM isolates it.
+      </p>
+      <div class="links">
+        <a id="hostLink" href="#">open host</a>
+        <a id="viewerLink" href="#">open viewer</a>
+        <button id="copyLink" type="button"></button>
+      </div>`;
+    document.body.insertBefore(header, mount);
+
+    header.querySelector("#hostLink").href = linkFor("host");
+    header.querySelector("#viewerLink").href = linkFor("viewer");
+
+    const LABEL = mode === "host" ? "copy viewer link" : "copy host link";
+    const copyBtn = header.querySelector("#copyLink");
+    copyBtn.textContent = LABEL;
+    copyBtn.addEventListener("click", async () => {
+      const url = new URL(linkFor(mode === "host" ? "viewer" : "host"), location.href).href;
+      try {
+        await navigator.clipboard.writeText(url);
+        copyBtn.textContent = "copied";
+      } catch {
+        copyBtn.textContent = url; // clipboard blocked — show it to select manually
+      }
+      setTimeout(() => (copyBtn.textContent = LABEL), 2000);
+    });
+  }
 
   // Create AFTER wiring listeners: a real host page may configure the element
   // before or after insertion, and both must work (see attributeChangedCallback).
   const el = document.createElement("screen-share");
 
   // Test hook: automated runs replace desktop capture with a synthetic stream,
-  // because a headless browser has no desktop to capture. Real users never
-  // hit this path — captureSource stays undefined and getDisplayMedia is used.
-  if (qs.get("fakeCapture") === "1") {
+  // because a headless browser has no desktop to capture. Behind DEV as well as
+  // its own flag, so a production page has no route to it at all and
+  // getDisplayMedia is the only way a real session captures anything.
+  if (DEV && qs.get("fakeCapture") === "1") {
     // Size is overridable so tests can drive a stream whose aspect ratio does
     // not match the stage. 16:9 into a 16:9 stage produces no letterbox bars,
     // which is exactly the case that hides cursor-mapping bugs.
@@ -146,15 +177,18 @@
   // fullscreen without a user gesture, so the widget waits for the first tap.
   if (qs.get("fullscreen") === "1") el.setAttribute("fullscreen", "");
 
-  // Event log the E2E test asserts against.
-  window.__ss = { events: [], cursors: [], taps: [] };
-  el.addEventListener("ss-tap", (e) => window.__ss.taps.push(e.detail));
-  for (const name of ["ss-state", "ss-stream", "ss-sharing", "ss-stopped", "ss-error", "ss-tap"]) {
-    el.addEventListener(name, (e) => window.__ss.events.push({ name, detail: e.detail }));
+  // Event log the E2E suite asserts against. A debugging hook, so it stays out
+  // of a real session rather than parking a global on every page.
+  if (DEV) {
+    window.__ss = { events: [], cursors: [], taps: [] };
+    el.addEventListener("ss-tap", (e) => window.__ss.taps.push(e.detail));
+    for (const name of ["ss-state", "ss-stream", "ss-sharing", "ss-stopped", "ss-error", "ss-tap"]) {
+      el.addEventListener(name, (e) => window.__ss.events.push({ name, detail: e.detail }));
+    }
+    el.addEventListener("ss-cursor", (e) => window.__ss.cursors.push(e.detail));
   }
-  el.addEventListener("ss-cursor", (e) => window.__ss.cursors.push(e.detail));
 
-  document.getElementById("mount").appendChild(el);
+  mount.appendChild(el);
 </script>
 </body>
 </html>
