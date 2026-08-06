@@ -90,6 +90,33 @@ jobs:
             gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
           done
 
+      # A deploy that times out leaves its deployment wedged "in progress", and
+      # the wedged one then rejects the next run outright:
+      #   HttpError: Deployment request failed for <sha> due to in progress
+      #   deployment. Please cancel <other sha> first or wait for it to complete.
+      # So one queue stall poisons every run after it until someone cancels by
+      # hand. Clearing stragglers first turns that into a self-healing retry.
+      #
+      # Safe here because this site deploys only from main and the concurrency
+      # group keeps runs serial — the only thing this can cancel is a leftover.
+      - name: cancel wedged Pages deployments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          gh api "repos/${{ github.repository }}/deployments?environment=github-pages&per_page=10" \
+            --jq '.[] | "\(.id) \(.sha)"' | while read -r id sha; do
+              state=$(gh api "repos/${{ github.repository }}/deployments/$id/statuses" \
+                        --jq '.[0].state // "none"' 2>/dev/null || echo none)
+              case "$state" in
+                in_progress|queued|pending)
+                  echo "cancelling wedged deployment ${sha:0:7} (state: $state)"
+                  gh api -X POST "repos/${{ github.repository }}/pages/deployments/$sha/cancel" \
+                    >/dev/null 2>&1 || echo "  (already gone)"
+                  ;;
+              esac
+            done
+
       - uses: actions/configure-pages@v6.0.0
       - uses: actions/upload-pages-artifact@v5.0.0
         with: { path: _site }
