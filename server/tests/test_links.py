@@ -120,6 +120,37 @@ class TestCreateRoomEndpoint:
                 client.post("/rooms")
             assert client.get("/healthz").json()["rooms"] == before
 
+    def test_a_minted_room_reads_as_empty_not_missing(self) -> None:
+        # A link that has been sent but not yet opened is the normal case; 404
+        # would report it as an error.
+        with TestClient(app) as client:
+            room = client.post("/rooms").json()["room"]
+            res = client.get(f"/rooms/{room}")
+        assert res.status_code == 200
+        assert res.json() == {
+            "room": room,
+            "peers": 0,
+            "capacity": 2,
+            "occupied": False,
+            "full": False,
+        }
+
+    def test_status_tracks_peers_joining_and_leaving(self) -> None:
+        with TestClient(app) as client:
+            room = client.post("/rooms").json()["room"]
+            with client.websocket_connect(f"/ws/{room}") as first:
+                first.receive_json()  # welcome
+                body = client.get(f"/rooms/{room}").json()
+                assert (body["peers"], body["occupied"], body["full"]) == (1, True, False)
+
+                with client.websocket_connect(f"/ws/{room}") as second:
+                    second.receive_json()
+                    body = client.get(f"/rooms/{room}").json()
+                    assert (body["peers"], body["full"]) == (2, True)
+
+            # Both sockets closed: the room is reclaimed, so it reads empty again.
+            assert client.get(f"/rooms/{room}").json()["peers"] == 0
+
     def test_the_browser_preflight_is_allowed(self) -> None:
         # A CRM calls this cross-origin; without POST in the CORS policy the
         # request dies at the preflight and never reaches the handler.

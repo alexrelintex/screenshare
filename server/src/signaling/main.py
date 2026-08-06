@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .links import embed_snippet, new_room_id, page_url
-from .rooms import RoomFull, RoomRegistry
+from .rooms import MAX_PEERS, RoomFull, RoomRegistry
 
 # Only these are forwarded. Anything else is rejected rather than relayed,
 # so the room cannot be used as a general-purpose message bus.
@@ -97,6 +97,34 @@ def create_room(request: Request) -> RoomResponse:
             url=page_url(app_base, room, "viewer", signaling_base),
             embed=embed_snippet(app_base, room, "viewer", signaling_base),
         ),
+    )
+
+
+class RoomStatus(BaseModel):
+    room: str
+    peers: int
+    capacity: int
+    occupied: bool
+    full: bool
+
+
+@app.get("/rooms/{room_id}", response_model=RoomStatus)
+def room_status(room_id: str) -> RoomStatus:
+    """How many peers are currently in a room.
+
+    Deliberately 200 with `peers: 0` for a room nobody has joined, never 404.
+    Rooms are created by the first peer and destroyed by the last, so a freshly
+    minted id names a room that does not exist yet — and a 404 would report
+    "no such room" for the entirely normal case of a link that has been sent
+    but not yet opened. Absent and empty are the same state here.
+    """
+    count = len(registry.peers(room_id))
+    return RoomStatus(
+        room=room_id,
+        peers=count,
+        capacity=MAX_PEERS,
+        occupied=count > 0,
+        full=count >= MAX_PEERS,
     )
 
 

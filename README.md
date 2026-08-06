@@ -100,28 +100,17 @@ or the reverse, depending on who is sharing:
 <screen-share room="L15lGVkwSZ3y" signaling="https://sig.example.com" mode="viewer"></screen-share>
 ```
 
-Configure the two bases, or the links point back at the signaling service, which
-serves no page:
+`GET /rooms/{id}` reports who is connected, for a "waiting for customer…"
+indicator. Set `APP_BASE_URL` and `SIGNALING_PUBLIC_URL` or the links point back
+at the signaling service, which serves no page.
 
-| Variable | Meaning |
-|---|---|
-| `APP_BASE_URL` | Where `demo/index.html` and `dist/screenshare.js` are served |
-| `SIGNALING_PUBLIC_URL` | This service's own public URL |
+**Put the viewer in the CRM and send the host link out.** Screen capture is
+blocked inside an iframe unless the *parent* page sends
+`allow="display-capture"`, which you cannot grant to yourself. Viewer mode needs
+no permissions and works in any iframe.
 
-Unset, both fall back to the incoming request URL — fine locally, unreliable
-behind a proxy. Neither is accepted from the caller: an endpoint that let a
-client name its own base would hand out links that look like yours and point
-somewhere else.
-
-**Nothing is allocated.** A room exists only while peers are connected, so this
-returns a name for a room that does not exist yet. That is what keeps an
-unauthenticated endpoint cheap — unused ids cost nothing — but it also means the
-endpoint is not a reservation: two callers cannot be handed the same room, yet
-nothing stops a third party who learns an id from joining before your customer
-does. Ids are `secrets.token_urlsafe` (~72 bits) precisely because, with no auth,
-**the room id is the only secret**. Treat one like a password: send it over a
-channel you trust, and put auth in front of this endpoint before exposing it
-broadly.
+📖 **[Full API reference →](docs/API.md)** — endpoints, room-id semantics and
+lifetime, embedding steps, and the iframe rules in detail.
 
 ## Run it locally
 
