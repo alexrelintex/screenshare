@@ -29,8 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      # Whichever attempt got there; the first is empty when it timed out.
-      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.0.0
@@ -94,34 +93,20 @@ jobs:
       - uses: actions/configure-pages@v6.0.0
       - uses: actions/upload-pages-artifact@v5.0.0
         with: { path: _site }
-      # The 10-minute wait is GitHub's deployment queue, not anything this
-      # workflow controls, and the action caps `timeout` at 600000 — raising it
-      # is silently clamped back, so waiting longer is not an option available
-      # to us. One retry is: a queue that is backed up now is usually moving
-      # again minutes later, and a stalled deploy leaves the site untouched, so
-      # a second attempt is safe rather than merely convenient.
+      # No retry step here, though the obvious shape of one is tempting. A Pages
+      # deployment is identified by the commit sha, so a second attempt in the
+      # same run recreates the identity the first attempt just cancelled and is
+      # killed within seconds:
+      #   Created deployment for 5559734…, ID: 5559734…
+      #   ##[error]Deployment cancelled.
+      # Recovery is a fresh run, not a retry inside this one.
       - id: deployment
         uses: actions/deploy-pages@v5.0.0
-        continue-on-error: true
-      - id: deployment_retry
-        if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v5.0.0
 
-      # always(), or this is skipped in exactly the case it exists to describe:
-      # a step after a failed one does not run by default.
-      - name: report deploy outcome
-        if: always()
+      - name: explain a failed deploy
+        if: failure() && steps.deployment.outcome == 'failure'
         run: |
-          first='${{ steps.deployment.outcome }}'
-          retry='${{ steps.deployment_retry.outcome }}'
-          if [ "$first" = "success" ]; then
-            echo "Deployed on the first attempt."
-          elif [ "$retry" = "success" ]; then
-            echo "::warning::First attempt timed out on GitHub's deployment queue; the retry succeeded."
-          else
-            echo "::error::Both deploy attempts timed out on GitHub's deployment queue."
-            echo "The build and artifact are fine — a timed-out deploy is cancelled without"
-            echo "publishing, so the live site still serves the last successful deploy."
-            echo "Re-run this workflow once the queue is moving."
-            exit 1
-          fi
+          echo "::warning::Deploy failed — usually a stall in GitHub's deployment queue."
+          echo "The build and artifact are fine. A failed deploy publishes nothing, so the"
+          echo "live site still serves the last successful deploy rather than a half-update."
+          echo "Recover by re-running this workflow; stale artifacts are cleared automatically."
